@@ -1,31 +1,50 @@
-import { CalendarDays, CreditCard, HardDrive } from "lucide-react";
+import { Building2, CalendarDays, ChevronRight, CreditCard, HardDrive, Mail, MapPin, MessageSquare, Package } from "lucide-react";
 import type { Metadata } from "next";
-import { Badge, Button, Card, CardHeader, Field, Input, PageHeader } from "@/components/ui";
+import Link from "next/link";
+import { SubmitButton } from "@/components/submit-button";
+import { Badge, buttonClass, Card, CardHeader, Field, Input, PageHeader } from "@/components/ui";
+import { changePassword, disconnectGoogleCalendar } from "@/lib/actions";
 import { requireOwner } from "@/lib/auth";
 import { brand } from "@/lib/brand";
-import { getPackages, getServices } from "@/lib/data";
-import { money } from "@/lib/format";
 import { integrationStatus } from "@/lib/integrations";
 
 export const metadata: Metadata = { title: "Settings" };
 
-const icons = { storage: HardDrive, payments: CreditCard, calendar: CalendarDays };
+const icons = { storage: HardDrive, payments: CreditCard, calendar: CalendarDays, mail: Mail, sms: MessageSquare };
 
-export default async function SettingsPage() {
-  await requireOwner();
-  const services = getServices();
+const sections = [
+  { href: "/studio/settings/messages", icon: MessageSquare, title: "Delivery email and text", body: "What agents receive when you mark a project delivered" },
+  { href: "/studio/settings/catalog", icon: Package, title: "Services and packages", body: "Prices and bundles agents can book" },
+  { href: "/studio/settings/zones", icon: MapPin, title: "Location zones and stock media", body: "Local-area photo packs offered when booking inside a zone" },
+  { href: "/studio/brokerages", icon: Building2, title: "Brokerages", body: "Logos and colors agents inherit on property websites" },
+];
+
+const pwMessages: Record<string, { tone: "ok" | "bad"; text: string }> = {
+  ok: { tone: "ok", text: "Password changed. Other devices were signed out." },
+  wrong: { tone: "bad", text: "Your current password didn't match." },
+  short: { tone: "bad", text: "The new password needs at least 8 characters." },
+};
+
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ google?: string; pw?: string }> }) {
+  const session = await requireOwner();
+  const q = await searchParams;
+  const status = await integrationStatus();
+  const pw = q.pw ? pwMessages[q.pw] : undefined;
+
   return (
     <>
-      <PageHeader title="Settings" description="Your studio profile, price list and connected services." />
+      <PageHeader title="Settings" description="Connected services, messages, prices and your account." />
+      {q.google === "connected" && <p className="mb-4 rounded-lg bg-ok-soft px-4 py-3 text-sm text-ok">Google Calendar connected. Confirmed shoots now land on your calendar.</p>}
+      {q.google === "error" && <p className="mb-4 rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad">Google Calendar didn&apos;t connect. Try again, and allow calendar access when Google asks.</p>}
+
       <div className="grid gap-6 xl:grid-cols-2 [&>*]:min-w-0">
         <Card>
-          <CardHeader title="Integrations" sub="Running on demo stand-ins until keys are added in .env.local" />
+          <CardHeader title="Connected services" sub="Add keys in your hosting environment; see docs/DEPLOY.md" />
           <ul className="divide-y divide-line">
-            {integrationStatus().map((i) => {
-              const Icon = icons[i.key as keyof typeof icons];
-              const live = i.provider !== "mock";
+            {status.map((i) => {
+              const Icon = icons[i.key];
               return (
-                <li key={i.key} className="flex items-center gap-4 px-5 py-4">
+                <li key={i.key} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
                   <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-2">
                     <Icon className="size-5 text-ink-2" />
                   </span>
@@ -33,67 +52,90 @@ export default async function SettingsPage() {
                     <span className="block text-[14px] font-semibold">{i.label}</span>
                     <span className="block text-[13px] text-muted">{i.detail}</span>
                   </span>
-                  {live ? <Badge tone="ok" dot>Connected</Badge> : <Badge tone="warn" dot>Demo mode</Badge>}
+                  {i.key === "calendar" && i.state === "ready" ? (
+                    <a href="/api/google/connect" className={buttonClass("primary", "sm")}>
+                      Connect
+                    </a>
+                  ) : i.key === "calendar" && i.state === "connected" ? (
+                    <form action={disconnectGoogleCalendar}>
+                      <SubmitButton size="sm" variant="ghost">
+                        Disconnect
+                      </SubmitButton>
+                    </form>
+                  ) : i.state === "connected" ? (
+                    <Badge tone="ok" dot>
+                      Live
+                    </Badge>
+                  ) : i.state === "off" ? (
+                    <Badge dot>Off</Badge>
+                  ) : (
+                    <Badge tone="warn" dot>
+                      {i.state === "local" ? "Local" : "Demo"}
+                    </Badge>
+                  )}
                 </li>
               );
             })}
           </ul>
         </Card>
 
-        <Card>
-          <CardHeader title="Studio profile" sub="Shown on invoices and the agent portal" />
-          <form className="grid gap-4 p-5 sm:grid-cols-2">
-            <Field label="Business name" className="sm:col-span-2">
-              <Input defaultValue={brand.name} />
-            </Field>
-            <Field label="Email">
-              <Input defaultValue={brand.email} />
-            </Field>
-            <Field label="Phone">
-              <Input defaultValue={brand.phone} />
-            </Field>
-            <div className="sm:col-span-2">
-              <Button type="button" variant="secondary" disabled title="Saving settings comes with the database">
-                Save changes
-              </Button>
-            </div>
-          </form>
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <ul className="divide-y divide-line">
+              {sections.map((x) => (
+                <li key={x.href}>
+                  <Link href={x.href} className="flex items-center gap-4 px-5 py-4 transition hover:bg-surface-2">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+                      <x.icon className="size-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[14px] font-semibold">{x.title}</span>
+                      <span className="block text-[13px] text-muted">{x.body}</span>
+                    </span>
+                    <ChevronRight className="size-4 text-muted" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
 
-        <Card>
-          <CardHeader title="Services" sub="A la carte prices" />
-          <ul className="divide-y divide-line">
-            {services.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-4 px-5 py-3">
-                <span className="min-w-0">
-                  <span className="block text-[14px] font-medium">{s.name}</span>
-                  <span className="block truncate text-[13px] text-muted">{s.description}</span>
-                </span>
-                <span className="text-right">
-                  <span className="tabular block text-[14px] font-medium">{money(s.price)}</span>
-                  <span className="block text-[12px] text-muted">{s.durationMin} min</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+          <Card>
+            <CardHeader title="Studio profile" sub="Shown on invoices, emails and the agent portal" />
+            <dl className="grid gap-3 p-5 text-[14px] sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <dt className="text-[12px] text-muted">Business name</dt>
+                <dd className="font-medium">{brand.name}</dd>
+              </div>
+              <div>
+                <dt className="text-[12px] text-muted">Email</dt>
+                <dd className="break-all">{brand.email}</dd>
+              </div>
+              <div>
+                <dt className="text-[12px] text-muted">Phone</dt>
+                <dd>{brand.phone}</dd>
+              </div>
+              <p className="text-[12px] text-muted sm:col-span-2">
+                Change these with the NEXT_PUBLIC_STUDIO_NAME, NEXT_PUBLIC_STUDIO_EMAIL and NEXT_PUBLIC_STUDIO_PHONE environment variables.
+              </p>
+            </dl>
+          </Card>
 
-        <Card>
-          <CardHeader title="Packages" sub="Bundles agents can book" />
-          <ul className="divide-y divide-line">
-            {getPackages().map((p) => (
-              <li key={p.id} className="px-5 py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="flex items-center gap-2 text-[14px] font-medium">
-                    {p.name} {p.popular && <Badge tone="accent">Popular</Badge>}
-                  </span>
-                  <span className="tabular text-[14px] font-medium">{money(p.price)}</span>
-                </div>
-                <p className="mt-0.5 text-[13px] text-muted">{p.serviceIds.map((id) => services.find((s) => s.id === id)?.name).join(" · ")}</p>
-              </li>
-            ))}
-          </ul>
-        </Card>
+          <Card>
+            <CardHeader title="Your password" sub={`Signed in as ${session.email}`} />
+            <form action={changePassword} className="grid gap-4 p-5 sm:grid-cols-2">
+              {pw && <p className={`rounded-lg px-4 py-3 text-sm sm:col-span-2 ${pw.tone === "ok" ? "bg-ok-soft text-ok" : "bg-bad-soft text-bad"}`}>{pw.text}</p>}
+              <Field label="Current password">
+                <Input name="current" type="password" autoComplete="current-password" required />
+              </Field>
+              <Field label="New password" hint="At least 8 characters">
+                <Input name="password" type="password" autoComplete="new-password" minLength={8} required />
+              </Field>
+              <div className="sm:col-span-2">
+                <SubmitButton variant="secondary">Change password</SubmitButton>
+              </div>
+            </form>
+          </Card>
+        </div>
       </div>
     </>
   );

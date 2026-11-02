@@ -1,68 +1,161 @@
-// Media storage. The UI only talks to this interface.
-// Today: MockStorageProvider (placeholder renders, nothing persisted).
-// Later: S3StorageProvider using @aws-sdk/client-s3 + @aws-sdk/s3-request-presigner.
+import "server-only";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { createReadStream, existsSync } from "node:fs";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { Readable } from "node:stream";
+
+// Media storage. Pages and routes only talk to this interface.
+//   S3StorageProvider    when STORAGE_PROVIDER=s3 (production)
+//   LocalStorageProvider otherwise: files live in ./.uploads and are served by
+//                        /api/local-storage with signed, expiring URLs, so the
+//                        whole upload and download flow works on a laptop.
 
 export interface UploadTarget {
-  /** Where the browser should PUT the file. */
   url: string;
   method: "PUT";
   headers: Record<string, string>;
-  /** Object key the file will live at once uploaded. */
-  key: string;
 }
 
 export interface StorageProvider {
-  readonly name: string;
-  /** Presigned URL the browser uploads to directly (keeps large files off the app server). */
-  createUploadTarget(input: { projectId: string; filename: string; contentType: string }): Promise<UploadTarget>;
-  /** Short-lived URL for viewing a web-sized preview. */
-  getPreviewUrl(key: string): Promise<string | null>;
-  /** Short-lived URL for downloading the original. Only call after payment is confirmed. */
+  readonly name: "s3" | "local";
+  /** Presigned URL the browser PUTs the file to directly. */
+  createUploadTarget(key: string, contentType: string): Promise<UploadTarget>;
+  /** Short-lived URL to show a file inline (thumbnails, previews, video). */
+  getPreviewUrl(key: string): Promise<string>;
+  /** Short-lived URL that downloads the file. Only hand out after checking payment. */
   getDownloadUrl(key: string, opts?: { filename?: string; expiresInSec?: number }): Promise<string>;
-  /** Single zip of every original in a project. */
-  getProjectArchiveUrl(projectId: string): Promise<string>;
+  /** Stream an object (used to build zip downloads). */
+  getObjectStream(key: string): Promise<{ body: ReadableStream<Uint8Array>; size?: number } | null>;
   deleteObject(key: string): Promise<void>;
 }
 
-export class MockStorageProvider implements StorageProvider {
-  readonly name = "mock";
+export const mediaKey = (projectId: string, mediaId: string, name: string) =>
+  `projects/${projectId}/${mediaId}/${name.replace(/[^\w.\-]+/g, "_")}`;
 
-  async createUploadTarget({ projectId, filename, contentType }: { projectId: string; filename: string; contentType: string }): Promise<UploadTarget> {
-    const key = `projects/${projectId}/${Date.now()}-${filename}`;
-    return { url: `/api/mock-upload?key=${encodeURIComponent(key)}`, method: "PUT", headers: { "Content-Type": contentType }, key };
-  }
+/* ---------------- Local (development) ---------------- */
 
-  async getPreviewUrl(): Promise<string | null> {
-    // The UI renders a generated placeholder when this returns null.
-    return null;
-  }
+const LOCAL_ROOT = path.resolve(process.env.LOCAL_STORAGE_DIR ?? ".uploads");
+const secret = () => process.env.AUTH_SECRET ?? "dev-secret";
 
-  async getDownloadUrl(key: string, opts?: { filename?: string }): Promise<string> {
-    return `/api/mock-download?key=${encodeURIComponent(key)}&filename=${encodeURIComponent(opts?.filename ?? "")}`;
-  }
-
-  async getProjectArchiveUrl(projectId: string): Promise<string> {
-    return `/api/mock-download?key=${encodeURIComponent(`projects/${projectId}/all.zip`)}&filename=${projectId}.zip`;
-  }
-
-  async deleteObject(): Promise<void> {}
+export function signLocal(key: string, op: "get" | "put", exp: number, filename = "") {
+  return createHmac("sha256", secret()).update(`${op}:${key}:${exp}:${filename}`).digest("base64url");
 }
 
-/*
- * S3 sketch for later:
- *
- * export class S3StorageProvider implements StorageProvider {
- *   readonly name = "s3";
- *   constructor(private s3 = new S3Client({ region: process.env.AWS_REGION }), private bucket = process.env.AWS_S3_BUCKET!) {}
- *   async createUploadTarget({ projectId, filename, contentType }) {
- *     const key = `projects/${projectId}/originals/${crypto.randomUUID()}-${filename}`;
- *     const url = await getSignedUrl(this.s3, new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }), { expiresIn: 900 });
- *     return { url, method: "PUT", headers: { "Content-Type": contentType }, key };
- *   }
- *   async getDownloadUrl(key, opts) {
- *     return getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key,
- *       ResponseContentDisposition: `attachment; filename="${opts?.filename ?? key.split("/").pop()}"` }), { expiresIn: opts?.expiresInSec ?? 300 });
- *   }
- *   ...
- * }
- */
+export function verifyLocal(key: string, op: "get" | "put", exp: number, sig: string, filename = "") {
+  if (!sig || exp < Date.now() / 1000) return false;
+  const want = Buffer.from(signLocal(key, op, exp, filename));
+  const got = Buffer.from(sig);
+  return want.length === got.length && timingSafeEqual(want, got);
+}
+
+export function localPath(key: string) {
+  const p = path.resolve(LOCAL_ROOT, key);
+  if (!p.startsWith(LOCAL_ROOT + path.sep)) throw new Error("Bad key");
+  return p;
+}
+
+class LocalStorageProvider implements StorageProvider {
+  readonly name = "local" as const;
+
+  private url(key: string, op: "get" | "put", ttl: number, filename = "") {
+    const exp = Math.floor(Date.now() / 1000) + ttl;
+    const q = new URLSearchParams({ key, exp: String(exp), sig: signLocal(key, op, exp, filename) });
+    if (filename) q.set("filename", filename);
+    return `/api/local-storage?${q}`;
+  }
+
+  async createUploadTarget(key: string, contentType: string) {
+    return { url: this.url(key, "put", 3600), method: "PUT" as const, headers: { "Content-Type": contentType } };
+  }
+  async getPreviewUrl(key: string) {
+    return this.url(key, "get", 3600);
+  }
+  async getDownloadUrl(key: string, opts?: { filename?: string; expiresInSec?: number }) {
+    return this.url(key, "get", opts?.expiresInSec ?? 300, opts?.filename ?? key.split("/").pop());
+  }
+  async getObjectStream(key: string) {
+    const p = localPath(key);
+    if (!existsSync(p)) return null;
+    const size = (await stat(p)).size;
+    return { body: Readable.toWeb(createReadStream(p)) as ReadableStream<Uint8Array>, size };
+  }
+  async deleteObject(key: string) {
+    await rm(localPath(key), { force: true });
+  }
+  /** Used by the local upload route. */
+  async write(key: string, data: Uint8Array) {
+    const p = localPath(key);
+    await mkdir(path.dirname(p), { recursive: true });
+    await writeFile(p, data);
+  }
+}
+
+/* ---------------- Amazon S3 (production) ---------------- */
+
+class S3StorageProvider implements StorageProvider {
+  readonly name = "s3" as const;
+  private bucket = process.env.AWS_S3_BUCKET!;
+  private clientPromise = import("@aws-sdk/client-s3").then(
+    ({ S3Client }) =>
+      new S3Client({
+        region: process.env.AWS_REGION,
+        ...(process.env.S3_ENDPOINT && { endpoint: process.env.S3_ENDPOINT, forcePathStyle: true }),
+      }),
+  );
+
+  private async sign(command: object, expiresIn: number) {
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return getSignedUrl((await this.clientPromise) as any, command as any, { expiresIn });
+  }
+
+  async createUploadTarget(key: string, contentType: string) {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const url = await this.sign(new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }), 3600);
+    return { url, method: "PUT" as const, headers: { "Content-Type": contentType } };
+  }
+
+  async getPreviewUrl(key: string) {
+    const cdn = process.env.MEDIA_CDN_URL;
+    // Thumbnails and watermarked previews can come from a CDN; originals never do.
+    if (cdn && !key.includes("/original-")) return `${cdn.replace(/\/$/, "")}/${key}`;
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    return this.sign(new GetObjectCommand({ Bucket: this.bucket, Key: key }), 3600);
+  }
+
+  async getDownloadUrl(key: string, opts?: { filename?: string; expiresInSec?: number }) {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const name = (opts?.filename ?? key.split("/").pop() ?? "file").replace(/"/g, "");
+    return this.sign(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key, ResponseContentDisposition: `attachment; filename="${name}"` }),
+      opts?.expiresInSec ?? 300,
+    );
+  }
+
+  async getObjectStream(key: string) {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    try {
+      const res = await (await this.clientPromise).send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      if (!res.Body) return null;
+      return { body: res.Body.transformToWebStream() as ReadableStream<Uint8Array>, size: res.ContentLength };
+    } catch {
+      return null;
+    }
+  }
+
+  async deleteObject(key: string) {
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    await (await this.clientPromise).send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+}
+
+export const localStorageProvider = new LocalStorageProvider();
+
+export function createStorage(): StorageProvider {
+  if (process.env.STORAGE_PROVIDER === "s3") {
+    if (!process.env.AWS_S3_BUCKET || !process.env.AWS_REGION) throw new Error("STORAGE_PROVIDER=s3 needs AWS_S3_BUCKET and AWS_REGION.");
+    return new S3StorageProvider();
+  }
+  return localStorageProvider;
+}

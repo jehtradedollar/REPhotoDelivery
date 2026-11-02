@@ -6,12 +6,17 @@ import { PropertyImage } from "./property-image";
 import { InvoiceStatusBadge, ProjectStatusBadge } from "./ui";
 
 export function PropertyCard({ row, href, showClient = true }: { row: ProjectRow; href: string; showClient?: boolean }) {
-  const { project: p, client, shoot, invoice, mediaCount } = row;
+  const { project: p, client, shoot, invoice, mediaCount, coverUrl } = row;
   const upcoming = shoot && new Date(shoot.end) > new Date() && p.status === "scheduled";
   return (
     <Link href={href} className="group block overflow-hidden rounded-2xl border border-line bg-surface shadow-card transition hover:border-line-strong">
       <div className="relative aspect-[16/10] overflow-hidden bg-surface-2">
-        <PropertyImage seed={p.coverSeed} className="transition duration-500 group-hover:scale-[1.03]" label={p.address} />
+        {coverUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={coverUrl} alt={p.address} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
+        ) : (
+          <PropertyImage seed={p.coverSeed} className="transition duration-500 group-hover:scale-[1.03]" label={p.address} />
+        )}
         <div className="absolute top-3 left-3">
           <ProjectStatusBadge status={p.status} />
         </div>

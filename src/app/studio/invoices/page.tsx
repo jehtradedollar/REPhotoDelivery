@@ -21,7 +21,7 @@ const filters = [
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ f?: string }> }) {
   await requireOwner();
   const { f = "all" } = await searchParams;
-  const all = getInvoices();
+  const all = await getInvoices();
   const sum = (xs: typeof all) => xs.reduce((s, i) => s + invoiceTotal(i).total, 0);
   const open = all.filter((i) => i.status === "sent" || i.status === "overdue");
   const list = all.filter((i) => (f === "all" ? true : f === "open" ? open.includes(i) : i.status === f));

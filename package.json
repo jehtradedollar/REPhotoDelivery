@@ -7,22 +7,38 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1150.0",
+    "@aws-sdk/s3-request-presigner": "3.1150.0",
+    "bcryptjs": "3.0.2",
+    "client-zip": "2.5.0",
     "clsx": "2.1.1",
+    "drizzle-orm": "0.45.4",
+    "jose": "5.10.0",
     "lucide-react": "0.469.0",
     "next": "15.5.28",
+    "nodemailer": "10.1.5",
+    "postgres": "3.4.7",
     "react": "19.1.10",
     "react-dom": "19.1.10",
-    "server-only": "0.0.1"
+    "server-only": "0.0.1",
+    "stripe": "17.7.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.18",
     "@types/node": "22.10.2",
+    "@types/nodemailer": "7.0.2",
     "@types/react": "19.1.8",
     "@types/react-dom": "19.1.6",
+    "drizzle-kit": "0.31.11",
     "tailwindcss": "4.1.18",
+    "tsx": "4.20.3",
     "typescript": "5.7.2"
   },
   "overrides": {

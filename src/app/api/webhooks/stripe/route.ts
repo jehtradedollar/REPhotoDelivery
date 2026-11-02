@@ -1,20 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { revalidatePath } from "next/cache";
-import { getInvoice } from "@/lib/data";
+import { markInvoicePaid } from "@/lib/billing";
 import { payments } from "@/lib/integrations";
 
-// Stripe calls this after checkout. The provider verifies the signature and
-// tells us which invoice was paid; we mark it paid, which unlocks downloads.
+export const runtime = "nodejs";
+
+// Point a Stripe webhook (checkout.session.completed and
+// checkout.session.async_payment_succeeded) at /api/webhooks/stripe.
 export async function POST(req: NextRequest) {
-  const result = await payments.handleWebhook(await req.text(), req.headers.get("stripe-signature"));
-  if (result) {
-    const inv = getInvoice(result.invoiceId);
-    if (inv && inv.status !== "paid") {
-      inv.status = "paid";
-      inv.paidAt = new Date().toISOString();
-      inv.paymentRef = result.paymentRef;
-      revalidatePath("/", "layout");
-    }
+  let result;
+  try {
+    result = await payments.handleWebhook(await req.text(), req.headers.get("stripe-signature"));
+  } catch (e) {
+    console.error("Stripe webhook rejected", e);
+    return new NextResponse("Invalid signature", { status: 400 });
   }
+  if (result) await markInvoicePaid(result.invoiceId, result.paymentRef);
   return NextResponse.json({ received: true });
 }

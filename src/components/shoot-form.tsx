@@ -96,14 +96,20 @@ export function ShootForm({
             <Field label="ZIP" className="col-span-4 sm:col-span-2">
               <Input name="zip" inputMode="numeric" placeholder="96001" />
             </Field>
-            <Field label="Beds" className="col-span-2">
+            <Field label="Square feet" className="col-span-6 sm:col-span-2">
+              <Input name="sqft" type="number" min={100} required placeholder="2,400" inputMode="numeric" />
+            </Field>
+            <Field label="Beds (optional)" className="col-span-2 sm:col-span-1">
               <Input name="beds" type="number" min={0} />
             </Field>
-            <Field label="Baths" className="col-span-2">
+            <Field label="Baths (optional)" className="col-span-2 sm:col-span-1">
               <Input name="baths" type="number" min={0} step={0.5} />
             </Field>
-            <Field label="Sq ft" className="col-span-2">
-              <Input name="sqft" type="number" min={0} />
+            <Field label="Acreage (optional)" className="col-span-2 sm:col-span-2">
+              <Input name="acreage" type="number" min={0} step={0.01} placeholder="0.25" />
+            </Field>
+            <Field label="Features (optional)" className="col-span-6" hint="One per line or separated by commas. Shown on the property website.">
+              <Textarea name="features" placeholder={"Pool and spa\nRV parking\nOwned solar"} className="min-h-20" />
             </Field>
           </div>
         </Card>
@@ -201,6 +207,7 @@ export function ShootForm({
           </div>
           <input type="hidden" name="date" value={day} />
           <input type="hidden" name="time" value={slot} />
+          <input type="hidden" name="startIso" value={slot ? new Date(`${day}T${slot}:00`).toISOString() : ""} />
           <Field label="Access notes" className="mt-5" hint="Lockbox codes, pets, parking, who will be there.">
             <Textarea name="notes" placeholder="Lockbox on front door, code 1234" />
           </Field>
@@ -241,6 +248,11 @@ export function ShootForm({
               <span className="text-muted">Pick a time slot</span>
             )}
           </div>
+          {clients && (
+            <label className="mt-4 flex items-center gap-2 text-[13px] text-ink-2">
+              <input type="checkbox" name="notify" defaultChecked className="accent-[var(--accent)]" /> Email the agent a confirmation
+            </label>
+          )}
           <SubmitButton size="lg" className="mt-5 w-full" disabled={!slot}>
             {submitLabel}
           </SubmitButton>

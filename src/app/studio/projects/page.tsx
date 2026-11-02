@@ -21,7 +21,7 @@ const filters: { key: ProjectStatus | "all"; label: string }[] = [
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
   await requireOwner();
   const { status = "all", q = "" } = await searchParams;
-  const all = projectRows();
+  const all = await projectRows();
   const rows = all.filter(
     (r) =>
       (status === "all" ? r.project.status !== "archived" : r.project.status === status) &&
