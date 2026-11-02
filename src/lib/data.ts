@@ -130,6 +130,7 @@ export async function mediaViews(items: MediaItem[], unlocked: boolean, opts: { 
         thumbUrl: m.thumbKey ? await storage.getPreviewUrl(m.thumbKey) : null,
         // Videos stream from the original once unlocked; before that, nothing to play.
         viewUrl: isVideo ? (unlocked && m.storageKey ? await storage.getPreviewUrl(m.storageKey) : null) : viewKey ? await storage.getPreviewUrl(viewKey) : null,
+        ...(m.stagedFromId && { group: "staged" as const }),
         downloadUrl: m.storageKey ? downloadHref(m.id, { token: opts.token }) : null,
         mlsUrl: m.kind === "photo" && m.webKey ? downloadHref(m.id, { token: opts.token, mls: true }) : null,
       };

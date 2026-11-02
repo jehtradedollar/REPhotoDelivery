@@ -167,6 +167,8 @@ export const media = pgTable(
     height: integer("height"),
     durationSec: integer("duration_sec"),
     externalUrl: text("external_url"),
+    /** Set on virtually staged images: the photo they were made from. */
+    stagedFromId: text("staged_from_id"),
     seed: integer("seed").notNull().default(0),
     sort: integer("sort").notNull().default(0),
     uploadedAt: created(),
@@ -261,4 +263,30 @@ export const stockMedia = pgTable(
     uploadedAt: created(),
   },
   (t) => [index("stock_media_pack_idx").on(t.packId)],
+);
+
+/** A paid virtual staging order for one photo. Runs once its invoice is paid. */
+export const stagingRequests = pgTable(
+  "staging_requests",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    mediaId: text("media_id")
+      .notNull()
+      .references(() => media.id, { onDelete: "cascade" }),
+    invoiceId: text("invoice_id"),
+    roomType: text("room_type").notNull(),
+    style: text("style").notNull(),
+    /** The agent's own words about the furniture they want. */
+    prompt: text("prompt").notNull().default(""),
+    status: text("status", { enum: ["awaiting_payment", "queued", "processing", "done", "failed", "cancelled"] }).notNull(),
+    providerJobId: text("provider_job_id"),
+    resultMediaId: text("result_media_id"),
+    error: text("error"),
+    createdAt: created(),
+    completedAt: ts("completed_at"),
+  },
+  (t) => [index("staging_project_idx").on(t.projectId), index("staging_invoice_idx").on(t.invoiceId)],
 );

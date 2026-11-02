@@ -14,6 +14,7 @@ export type MediaItem = typeof s.media.$inferSelect;
 export type Invoice = typeof s.invoices.$inferSelect;
 export type ActivityEvent = typeof s.activity.$inferSelect;
 export type InvoiceLine = s.InvoiceLineRow;
+export type StagingRequest = typeof s.stagingRequests.$inferSelect;
 
 export type ServiceKind = Service["kind"];
 export type ProjectStatus = Project["status"];
@@ -44,8 +45,8 @@ export interface MediaView {
   thumbUrl: string | null;
   /** Large view: watermarked preview before payment, clean web size after. */
   viewUrl: string | null;
-  /** Gallery section; "local" is stock media of the area. */
-  group?: "local";
+  /** Gallery section: "local" is stock media of the area, "staged" is virtual staging. */
+  group?: "local" | "staged";
   /** Full-quality original; null for embedded links. */
   downloadUrl: string | null;
   /** The 2048px, under-1 MB JPEG for MLS uploads. Photos only. */

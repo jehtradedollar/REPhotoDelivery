@@ -28,6 +28,8 @@ export interface StorageProvider {
   /** Stream an object (used to build zip downloads). */
   getObjectStream(key: string): Promise<{ body: ReadableStream<Uint8Array>; size?: number } | null>;
   deleteObject(key: string): Promise<void>;
+  /** Server-side write, for files the app makes itself (e.g. virtual staging results). */
+  putObject(key: string, body: Uint8Array, contentType: string): Promise<void>;
 }
 
 export const mediaKey = (projectId: string, mediaId: string, name: string) =>
@@ -82,6 +84,9 @@ class LocalStorageProvider implements StorageProvider {
   }
   async deleteObject(key: string) {
     await rm(localPath(key), { force: true });
+  }
+  async putObject(key: string, body: Uint8Array) {
+    await this.write(key, body);
   }
   /** Used by the local upload route. */
   async write(key: string, data: Uint8Array) {
@@ -142,6 +147,11 @@ class S3StorageProvider implements StorageProvider {
     } catch {
       return null;
     }
+  }
+
+  async putObject(key: string, body: Uint8Array, contentType: string) {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    await (await this.clientPromise).send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }));
   }
 
   async deleteObject(key: string) {

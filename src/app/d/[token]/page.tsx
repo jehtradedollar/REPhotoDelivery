@@ -8,6 +8,7 @@ import { confirmCheckoutReturn } from "@/lib/billing";
 import { brand } from "@/lib/brand";
 import { agentBranding } from "@/lib/branding";
 import { getClient, getInvoice, getMedia, getShoot, heroUrl, isUnlocked, mediaViews } from "@/lib/data";
+import { stagingOffer } from "@/lib/staging";
 import { stockViews } from "@/lib/stock";
 
 // Stand-alone delivery page. The link in the delivery email and text points
@@ -20,19 +21,21 @@ export default async function DeliveryPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ paid?: string; session_id?: string; pay?: string }>;
+  searchParams: Promise<{ paid?: string; session_id?: string; pay?: string; staging?: string }>;
 }) {
   const { token } = await params;
   const q = await searchParams;
   const p = await projectByToken(token);
   if (!p) notFound();
-  await confirmCheckoutReturn(q.session_id, p.invoiceId);
+  await confirmCheckoutReturn(q.session_id, p.id);
   const [client, shoot, invoice, unlocked] = await Promise.all([getClient(p.clientId), getShoot(p.shootId), getInvoice(p.invoiceId), isUnlocked(p)]);
   const delivered = isDelivered(p);
   const [media, stock, hero] = delivered
     ? await Promise.all([getMedia(p.id).then((m) => mediaViews(m, unlocked, { token })), stockViews(p, unlocked, { token }), heroUrl(p, unlocked)])
     : [[], [], null];
   const branding = client ? await agentBranding(client) : null;
+
+  const stagingInfo = delivered ? await stagingOffer(p.id, unlocked, media) : null;
 
   return (
     <div className="min-h-dvh bg-bg">
@@ -62,7 +65,8 @@ export default async function DeliveryPage({
           unlocked={unlocked}
           hero={hero}
           token={token}
-          flash={{ paid: !!q.paid, payOffline: q.pay === "offline" }}
+          flash={{ paid: !!q.paid, payOffline: q.pay === "offline", staging: !!q.staging }}
+        staging={stagingInfo}
         />
         <p className="mt-10 text-center text-[13px] text-muted">
           Have an account?{" "}

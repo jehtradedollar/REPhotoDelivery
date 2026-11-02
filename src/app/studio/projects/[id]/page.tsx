@@ -18,16 +18,20 @@ import {
   confirmShoot,
   createDraftInvoice,
   deliverProject,
+  cancelStagingRequest,
   markInvoicePaidManually,
+  refreshStaging,
   rotateDeliveryLink,
   sendInvoice,
   setProjectStatus,
 } from "@/lib/actions";
 import { requireOwner } from "@/lib/auth";
 import { getClient, getInvoice, getMedia, getProject, getServices, getShoot, mediaViews } from "@/lib/data";
+import { stagingRequestsFor } from "@/lib/staging";
 import { stockViews } from "@/lib/stock";
+import { StagingFulfil } from "@/components/staging-fulfil";
 import { date, money, time } from "@/lib/format";
-import { calendar } from "@/lib/integrations";
+import { calendar, staging } from "@/lib/integrations";
 import { deliveryPath, projectZipHref } from "@/lib/links";
 import { appUrl } from "@/lib/url";
 
@@ -55,6 +59,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const steps = projectSteps(p, shoot, invoice, media.length);
   const canDeliver = media.length > 0 && p.status !== "delivered" && p.status !== "archived";
   const hasFiles = media.some((m) => m.storageKey);
+  const stagingReqs = (await stagingRequestsFor(p.id)).filter((r) => r.status !== "awaiting_payment");
   const deliveryUrl = p.deliveryToken ? appUrl(deliveryPath(p.deliveryToken)) : null;
 
   return (
@@ -195,6 +200,59 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
                   )}
                 </div>
               </div>
+            </Card>
+          )}
+
+          {stagingReqs.length > 0 && (
+            <Card>
+              <CardHeader
+                title="Virtual staging"
+                sub={staging.name === "manual" ? "No staging API connected: upload each staged photo here" : "Sent to the staging API"}
+                action={
+                  staging.name === "http" && stagingReqs.some((r) => r.status === "processing" || r.status === "queued") ? (
+                    <form action={refreshStaging.bind(null, p.id)}>
+                      <SubmitButton size="sm" variant="ghost">
+                        Check now
+                      </SubmitButton>
+                    </form>
+                  ) : undefined
+                }
+              />
+              <ul className="divide-y divide-line">
+                {stagingReqs.map((r) => {
+                  const src = views.find((v) => v.id === r.mediaId);
+                  const open = r.status === "queued" || r.status === "processing" || r.status === "failed";
+                  return (
+                    <li key={r.id} className="space-y-2 px-5 py-3 text-[13px]">
+                      <div className="flex items-center gap-3">
+                        {src?.thumbUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={src.thumbUrl} alt="" className="h-10 w-14 shrink-0 rounded object-cover" />
+                        ) : (
+                          <span className="h-10 w-14 shrink-0 rounded bg-surface-2" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">
+                            {r.roomType} · {r.style}
+                          </div>
+                          <div className={r.status === "failed" ? "text-bad" : r.status === "done" ? "text-ok" : "text-muted"}>
+                            {r.status === "failed" ? (r.error ?? "Failed") : r.status === "done" ? "Delivered" : r.status === "processing" ? "Staging" : r.status === "cancelled" ? "Cancelled" : "Waiting"}
+                          </div>
+                        </div>
+                      </div>
+                      {r.prompt && <p className="rounded-lg bg-surface-2 px-3 py-2 text-ink-2">&ldquo;{r.prompt}&rdquo;</p>}
+                      {open && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StagingFulfil requestId={r.id} />
+                          <ConfirmButton action={cancelStagingRequest.bind(null, r.id)} message="Cancel this staging request? Refund the agent separately if needed." variant="ghost" size="sm">
+                            Cancel
+                          </ConfirmButton>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </Card>
           )}
 

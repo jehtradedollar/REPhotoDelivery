@@ -3,6 +3,7 @@ import { createCalendar } from "./calendar";
 import { createMailer } from "./mail";
 import { createPayments } from "./payments";
 import { createSms } from "./sms";
+import { createStaging } from "./staging";
 import { createStorage } from "./storage";
 
 // One place that picks each provider from environment variables.
@@ -11,6 +12,7 @@ export const payments = createPayments();
 export const calendar = createCalendar();
 export const mailer = createMailer();
 export const sms = createSms();
+export const staging = createStaging();
 
 export async function integrationStatus() {
   const connected = await calendar.isConnected();
@@ -48,6 +50,12 @@ export async function integrationStatus() {
       label: "Text messages (Twilio)",
       detail: sms.name === "twilio" ? "Sending through Twilio" : "Printing texts to the server log. Add Twilio keys to send.",
       state: sms.name === "twilio" ? "connected" : "demo",
+    },
+    {
+      key: "staging",
+      label: "Virtual staging AI",
+      detail: staging.name === "http" ? `Sending to ${new URL(process.env.VIRTUAL_STAGING_API_URL!).host}` : "No API yet. Paid requests queue on the project page for you to fulfil.",
+      state: staging.name === "http" ? "connected" : "demo",
     },
   ] as const;
 }

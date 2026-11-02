@@ -1,4 +1,4 @@
-import { Building2, CalendarDays, ChevronRight, CreditCard, HardDrive, Mail, MapPin, MessageSquare, Package } from "lucide-react";
+import { Building2, CalendarDays, Sofa, ChevronRight, CreditCard, HardDrive, Mail, MapPin, MessageSquare, Package } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SubmitButton } from "@/components/submit-button";
@@ -10,11 +10,12 @@ import { integrationStatus } from "@/lib/integrations";
 
 export const metadata: Metadata = { title: "Settings" };
 
-const icons = { storage: HardDrive, payments: CreditCard, calendar: CalendarDays, mail: Mail, sms: MessageSquare };
+const icons = { storage: HardDrive, payments: CreditCard, calendar: CalendarDays, mail: Mail, sms: MessageSquare, staging: Sofa };
 
 const sections = [
   { href: "/studio/settings/messages", icon: MessageSquare, title: "Delivery email and text", body: "What agents receive when you mark a project delivered" },
   { href: "/studio/settings/catalog", icon: Package, title: "Services and packages", body: "Prices and bundles agents can book" },
+  { href: "/studio/settings/staging", icon: Sofa, title: "Virtual staging", body: "Per-photo price for AI staging agents order after delivery" },
   { href: "/studio/settings/zones", icon: MapPin, title: "Location zones and stock media", body: "Local-area photo packs offered when booking inside a zone" },
   { href: "/studio/brokerages", icon: Building2, title: "Brokerages", body: "Logos and colors agents inherit on property websites" },
 ];

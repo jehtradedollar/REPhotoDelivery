@@ -1,4 +1,5 @@
-import { CalendarDays, CheckCircle2, Clock, Download, Globe, Lock, Sparkles } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock, Download, Globe, Lock, Sofa, Sparkles } from "lucide-react";
+import { StagingDialog } from "@/components/staging-dialog";
 import Link from "next/link";
 import { InvoiceLines } from "@/components/invoice-lines";
 import { MediaGallery } from "@/components/media-gallery";
@@ -9,8 +10,9 @@ import { buttonClass, Card, CardHeader, InvoiceStatusBadge, ShootStatusBadge } f
 import { startCheckout } from "@/lib/actions";
 import { date, money, time } from "@/lib/format";
 import { invoiceTotal } from "@/lib/invoice";
+import { ROOM_TYPES, STYLES } from "@/lib/staging-options";
 import { projectZipHref } from "@/lib/links";
-import type { Invoice, MediaView, Project, Shoot } from "@/lib/types";
+import type { Invoice, MediaView, Project, Shoot, StagingRequest } from "@/lib/types";
 
 // The delivery page body, shared by the agent portal and the stand-alone
 // delivery link (/d/<token>), so both always show the same thing.
@@ -24,10 +26,20 @@ export interface DeliveryViewProps {
   hero: string | null;
   /** Set on the stand-alone page; carried into download and payment links. */
   token?: string;
-  flash?: { paid?: boolean; booked?: boolean; payOffline?: boolean };
+  flash?: { paid?: boolean; booked?: boolean; payOffline?: boolean; staging?: boolean };
+  staging?: { price: number; canOrder: boolean; photos: { id: string; thumbUrl: string | null; filename: string }[]; requests: StagingRequest[] } | null;
 }
 
-export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero, token, flash = {} }: DeliveryViewProps) {
+const stagingStatus: Record<StagingRequest["status"], string> = {
+  awaiting_payment: "Awaiting payment",
+  queued: "In the queue",
+  processing: "Staging now",
+  done: "Ready",
+  failed: "Couldn't stage; the studio will follow up",
+  cancelled: "Cancelled",
+};
+
+export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero, token, flash = {}, staging }: DeliveryViewProps) {
   const delivered = p.status === "delivered" || p.status === "archived";
   const total = invoice ? invoiceTotal(invoice).total : 0;
   const hasFiles = media.some((m) => m.downloadUrl);
@@ -41,6 +53,11 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
       {flash.paid && (
         <div className="mb-4 flex items-center gap-2 rounded-xl bg-ok-soft px-4 py-3 text-[14px] text-ok">
           <CheckCircle2 className="size-5 shrink-0" /> {unlocked ? "Payment received. Your downloads are unlocked." : "Thanks! We're confirming your payment; this page unlocks in a moment."}
+        </div>
+      )}
+      {flash.staging && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl bg-ok-soft px-4 py-3 text-[14px] text-ok">
+          <Sofa className="size-5 shrink-0" /> Virtual staging ordered. Staged photos will appear in your gallery when they&apos;re ready.
         </div>
       )}
       {flash.booked && (
@@ -133,6 +150,37 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
         </div>
 
         <div className="space-y-6">
+          {staging && (
+            <Card>
+              <CardHeader title="Virtual staging" sub={staging.canOrder ? `Furnish empty rooms with AI · ${money(staging.price)} per photo` : undefined} />
+              <div className="space-y-4 p-5">
+                {staging.canOrder && <StagingDialog projectId={p.id} token={token} photos={staging.photos} price={staging.price} roomTypes={ROOM_TYPES} styles={STYLES} />}
+                {staging.requests.length > 0 && (
+                  <ul className="space-y-2 text-[13px]">
+                    {staging.requests.map((r) => {
+                      const src = staging.photos.find((x) => x.id === r.mediaId);
+                      return (
+                        <li key={r.id} className="flex items-center gap-3">
+                          {src?.thumbUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={src.thumbUrl} alt="" className="h-9 w-12 shrink-0 rounded object-cover" />
+                          ) : (
+                            <span className="h-9 w-12 shrink-0 rounded bg-surface-2" />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">
+                              {r.roomType} · {r.style}
+                            </span>
+                            <span className={r.status === "done" ? "text-ok" : r.status === "failed" ? "text-bad" : "text-muted"}>{stagingStatus[r.status]}</span>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </Card>
+          )}
           {showSite && (
             <Card>
               <CardHeader title="Property website" sub={siteLive ? "Share it on social or with buyers" : "Goes live once your media is delivered and paid"} />

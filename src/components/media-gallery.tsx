@@ -10,18 +10,19 @@ import type { MediaKind, MediaView } from "@/lib/types";
 import { PropertyImage } from "./property-image";
 import { buttonClass } from "./ui";
 
-type TabKey = MediaKind | "local";
+type TabKey = MediaKind | "local" | "staged";
 type Quality = "full" | "mls";
 
 const tabs: { key: TabKey; label: string }[] = [
   { key: "photo", label: "Photos" },
+  { key: "staged", label: "Virtual staging" },
   { key: "video", label: "Video" },
   { key: "floorplan", label: "Floor plans" },
   { key: "tour", label: "Embedded links" },
   { key: "local", label: "Local area" },
 ];
 
-const inTab = (i: MediaView, t: TabKey) => (t === "local" ? i.group === "local" : !i.group && i.kind === t);
+const inTab = (i: MediaView, t: TabKey) => (t === "local" || t === "staged" ? i.group === t : !i.group && i.kind === t);
 const hrefFor = (i: MediaView, q: Quality) => (q === "mls" ? (i.mlsUrl ?? i.downloadUrl) : i.downloadUrl);
 
 /** Two download choices for photos: the untouched original, or the MLS-size copy. */
@@ -261,7 +262,7 @@ export function MediaGallery({
           ))}
         </div>
       ) : (
-        <ul className={cn("grid gap-2 sm:gap-3", tab === "photo" ? "grid-cols-2 sm:grid-cols-3 xl:grid-cols-4" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3")}>
+        <ul className={cn("grid gap-2 sm:gap-3", tab === "photo" || tab === "staged" || tab === "local" ? "grid-cols-2 sm:grid-cols-3 xl:grid-cols-4" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3")}>
           {list.map((item, idx) => {
             const isSel = selected.has(item.id);
             return (
@@ -274,7 +275,7 @@ export function MediaGallery({
                   )}
                   aria-label={`Open ${item.filename}`}
                 >
-                  <div className={cn(tab === "photo" ? "aspect-[3/2]" : "aspect-video")}>
+                  <div className={cn(tab === "photo" || tab === "staged" || tab === "local" ? "aspect-[3/2]" : "aspect-video")}>
                     <Thumb item={item} className="transition duration-300 group-hover:scale-[1.03]" />
                   </div>
                   {item.kind === "video" && (

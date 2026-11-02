@@ -36,6 +36,13 @@
       "when": 1793653420612,
       "tag": "0004_project_package",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793653709230,
+      "tag": "0005_virtual_staging",
+      "breakpoints": true
     }
   ]
 }

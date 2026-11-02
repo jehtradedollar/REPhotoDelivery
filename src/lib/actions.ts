@@ -25,13 +25,14 @@ import {
 import { markInvoicePaid } from "./billing";
 import { brand } from "./brand";
 import { viewerFor } from "./access";
-import { allInvoiceNumbers, getClient, getInvoice, getMediaItem, getProject, getShoot, logActivity, newId } from "./data";
+import { allInvoiceNumbers, getClient, getInvoice, getMediaItem, getProject, getShoot, isUnlocked, logActivity, newId } from "./data";
 import { fullAddress } from "./format";
 import { calendar, payments, storage } from "./integrations";
 import { mediaKey } from "./integrations/storage";
 import { newToken } from "./ids";
 import { invoiceTotal, nextInvoiceNumber } from "./invoice";
 import { mockCheckoutAllowed } from "./integrations/payments";
+import { getStagingConfig, ingestStaged, pollStaging, ROOM_TYPES, saveStagingConfig, STYLES } from "./staging";
 import { getStockPacks, packsFor } from "./stock";
 import {
   notifyBookingRequested,
@@ -1021,4 +1022,126 @@ export async function removeStockItem(id: string) {
   if (!m) return;
   await Promise.all([m.storageKey, m.thumbKey, m.previewKey, m.webKey].filter((k): k is string => !!k).map((k) => storage.deleteObject(k).catch(() => {})));
   revalidatePath(`/studio/settings/zones/${m.packId}`);
+}
+
+/* ================= Virtual staging ================= */
+
+export interface StagingChoice {
+  mediaId: string;
+  roomType: string;
+  style: string;
+  prompt: string;
+}
+
+/**
+ * Agent orders virtual staging for some photos: makes a small invoice for the
+ * order, then sends them to checkout. Staging starts once it's paid.
+ */
+export async function orderStaging(projectId: string, tokenArg: string, fd: FormData) {
+  const choicesJson = String(fd.get("choices") ?? "[]");
+  const token = typeof tokenArg === "string" && tokenArg ? tokenArg : undefined;
+  const project = await getProject(projectId);
+  const viewer = project && (await viewerFor(project, token));
+  const backPath = token ? `/d/${token}` : `/portal/properties/${projectId}`;
+  if (!project || !viewer || viewer.kind === "owner") redirect(token ? backPath : "/portal");
+  const config = await getStagingConfig();
+  if (!config.enabled || !(await isUnlocked(project))) redirect(backPath);
+
+  let raw: StagingChoice[] = [];
+  try {
+    raw = JSON.parse(choicesJson);
+  } catch {
+    redirect(backPath);
+  }
+  const photos = await db.select().from(s.media).where(and(eq(s.media.projectId, projectId), eq(s.media.kind, "photo")));
+  const choices = (Array.isArray(raw) ? raw : [])
+    .filter((c) => photos.some((m) => m.id === c.mediaId && !m.stagedFromId))
+    .slice(0, 50)
+    .map((c) => ({
+      mediaId: String(c.mediaId),
+      roomType: (ROOM_TYPES as readonly string[]).includes(c.roomType) ? c.roomType : ROOM_TYPES[0],
+      style: (STYLES as readonly string[]).includes(c.style) ? c.style : STYLES[0],
+      prompt: String(c.prompt ?? "").trim().slice(0, 500),
+    }));
+  if (!choices.length) redirect(backPath);
+
+  const invoiceId = newId("inv");
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx.insert(s.invoices).values({
+      id: invoiceId,
+      number: nextInvoiceNumber(await allInvoiceNumbers()),
+      projectId,
+      clientId: project.clientId,
+      status: "sent",
+      lines: choices.map((c) => ({ description: `Virtual staging: ${photos.find((m) => m.id === c.mediaId)!.filename} (${c.roomType}, ${c.style})`, quantity: 1, unitPrice: config.price })),
+      taxRate: Number(process.env.DEFAULT_TAX_RATE || 0),
+      issuedAt: now.toISOString(),
+      dueAt: now.toISOString(),
+    });
+    await tx.insert(s.stagingRequests).values(choices.map((c) => ({ id: newId("stg"), projectId, invoiceId, status: "awaiting_payment" as const, ...c })));
+  });
+  await logActivity("booking", `${viewer.kind === "link" ? "Agent" : viewer.name} ordered virtual staging for ${choices.length} photo${choices.length > 1 ? "s" : ""} at ${project.address}`, {
+    projectId,
+    clientId: project.clientId,
+  });
+
+  if (config.price === 0) {
+    await markInvoicePaid(invoiceId, "free");
+    redirect(back(backPath, { staging: "1" }));
+  }
+  if (payments.name === "mock" && !mockCheckoutAllowed()) redirect(back(backPath, { pay: "offline" }));
+  const inv = (await getInvoice(invoiceId))!;
+  const client = await getClient(project.clientId);
+  const checkout = await payments.createCheckoutSession({
+    invoiceId,
+    invoiceNumber: inv.number,
+    amountCents: invoiceTotal(inv).total,
+    customerEmail: client?.email ?? "",
+    description: `Virtual staging · ${project.address}`,
+    successUrl: appUrl(`${backPath}?staging=1`),
+    cancelUrl: appUrl(backPath),
+  });
+  redirect(checkout.url);
+}
+
+/** Owner: set the per-photo price and turn the offer on or off. */
+export async function saveStagingSettings(fd: FormData) {
+  await requireOwner();
+  await saveStagingConfig({ enabled: fd.getAll("enabled").includes("on"), price: cents(fd, "price") });
+  redirect(back("/studio/settings/staging", { saved: "1" }));
+}
+
+/** Owner: presigned upload for a staged photo made outside the app. */
+export async function prepareStagingUpload(requestId: string, contentType: string) {
+  await requireOwner();
+  const [r] = await db.select().from(s.stagingRequests).where(eq(s.stagingRequests.id, requestId));
+  if (!r || !/^image\/(jpeg|png|webp)$/.test(contentType)) throw new Error("Not allowed");
+  const key = `staging-uploads/${r.id}/${newId("up")}`;
+  const t = await storage.createUploadTarget(key, contentType);
+  return { key, url: t.url, headers: t.headers };
+}
+
+export async function completeStagingUpload(requestId: string, key: string) {
+  await requireOwner();
+  const [r] = await db.select().from(s.stagingRequests).where(eq(s.stagingRequests.id, requestId));
+  if (!r || !key.startsWith(`staging-uploads/${r.id}/`)) return;
+  const obj = await storage.getObjectStream(key);
+  if (!obj) return;
+  const buf = Buffer.from(await new Response(obj.body).arrayBuffer());
+  await ingestStaged(r, buf);
+  await storage.deleteObject(key).catch(() => {});
+  revalidatePath(`/studio/projects/${r.projectId}`);
+}
+
+export async function refreshStaging(projectId: string) {
+  await requireOwner();
+  await pollStaging(projectId);
+  revalidatePath(`/studio/projects/${projectId}`);
+}
+
+export async function cancelStagingRequest(requestId: string) {
+  await requireOwner();
+  const [r] = await db.update(s.stagingRequests).set({ status: "cancelled" }).where(eq(s.stagingRequests.id, requestId)).returning();
+  if (r) revalidatePath(`/studio/projects/${r.projectId}`);
 }
