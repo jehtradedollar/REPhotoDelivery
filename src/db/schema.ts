@@ -112,6 +112,8 @@ export const projects = pgTable(
     shootId: text("shoot_id"),
     invoiceId: text("invoice_id"),
     serviceIds: text("service_ids").array().notNull().default([]),
+    /** Package booked, if any; billed at the bundle price plus extra services. */
+    packageId: text("package_id"),
     /** Local-area stock packs the agent added when booking. */
     stockPackIds: text("stock_pack_ids").array().notNull().default([]),
     coverMediaId: text("cover_media_id"),

@@ -33,7 +33,8 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
   const hasFiles = media.some((m) => m.downloadUrl);
   const hasMls = media.some((m) => m.mlsUrl);
   const portal = !token;
-  const siteLive = delivered && unlocked && p.sitePublished && p.siteSlug;
+  const siteLive = delivered && unlocked && p.sitePublished && !!p.siteSlug;
+  const showSite = !!p.siteSlug && (siteLive || portal);
 
   return (
     <>
@@ -132,15 +133,15 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
         </div>
 
         <div className="space-y-6">
-          {siteLive && (
+          {showSite && (
             <Card>
-              <CardHeader title="Property website" sub="Share it on social or with buyers" />
+              <CardHeader title="Property website" sub={siteLive ? "Share it on social or with buyers" : "Goes live once your media is delivered and paid"} />
               <div className="space-y-2 p-5">
                 <a href={`/p/${p.siteSlug}`} target="_blank" rel="noreferrer" className={buttonClass("secondary", "sm", "w-full justify-start")}>
-                  <Globe /> Branded site
+                  <Globe /> Branded site{!siteLive && " (preview)"}
                 </a>
                 <a href={`/p/${p.siteSlug}/u`} target="_blank" rel="noreferrer" className={buttonClass("secondary", "sm", "w-full justify-start")}>
-                  <Globe /> Unbranded site (for MLS)
+                  <Globe /> Unbranded site (for MLS){!siteLive && " (preview)"}
                 </a>
                 {portal && (
                   <Link href={`/portal/properties/${p.id}/site`} className="block pt-1 text-[13px] font-medium text-accent hover:underline">

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "package_id" text;

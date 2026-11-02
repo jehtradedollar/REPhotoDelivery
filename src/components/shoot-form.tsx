@@ -1,12 +1,87 @@
 "use client";
 
-import { Check } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Check, MapPin, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { stockOffers, type StockOffer } from "@/lib/actions";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
 import type { Client, Package, Service } from "@/lib/types";
 import { SubmitButton } from "./submit-button";
-import { Card, Field, Input, Select, Textarea } from "./ui";
+import { Button, Card, Field, Input, Select, Textarea } from "./ui";
+
+/** Pop-up offering local-area stock packs when the address is inside a studio zone. */
+function StockOfferDialog({ offers, picked, onToggle, onClose }: { offers: StockOffer[]; picked: string[]; onToggle: (id: string) => void; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="stock-title" onClick={onClose}>
+      <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-2xl sm:rounded-2xl sm:p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-start justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-1.5 text-[12px] font-semibold tracking-wide text-accent uppercase">
+              <MapPin className="size-3.5" /> {offers[0]?.zone}
+            </p>
+            <h2 id="stock-title" className="mt-1 font-display text-[24px] leading-tight font-medium tracking-tight">
+              Add local-area photos?
+            </h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-surface-2" aria-label="Close">
+            <X className="size-5" />
+          </button>
+        </div>
+        <p className="mb-5 text-[14px] text-ink-2">This listing is in an area we&apos;ve photographed. Show buyers what&apos;s nearby: they&apos;re delivered with your gallery and work on your property website.</p>
+        <ul className="space-y-3">
+          {offers.map((o) => {
+            const on = picked.includes(o.id);
+            return (
+              <li key={o.id}>
+                <label className={cn("block cursor-pointer rounded-xl border p-3 transition", on ? "border-accent bg-accent-soft/50 ring-1 ring-accent" : "border-line hover:border-line-strong")}>
+                  <div className="flex items-start gap-3">
+                    <input type="checkbox" checked={on} onChange={() => onToggle(o.id)} className="mt-1 accent-[var(--accent)]" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex justify-between gap-2 text-[14px] font-semibold">
+                        {o.name} <span className="tabular">+{money(o.price)}</span>
+                      </div>
+                      {o.description && <p className="text-[13px] text-ink-2">{o.description}</p>}
+                      <p className="text-[12px] text-muted">{o.count} photos</p>
+                    </div>
+                  </div>
+                  {o.thumbs.length > 0 && (
+                    <div className="mt-3 grid grid-cols-4 gap-1.5">
+                      {o.thumbs.map((t) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={t} src={t} alt="" className="aspect-[4/3] w-full rounded-md object-cover" loading="lazy" />
+                      ))}
+                    </div>
+                  )}
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {picked.length ? "Done" : "No thanks"}
+          </Button>
+          {!picked.length && (
+            <Button
+              type="button"
+              onClick={() => {
+                offers.forEach((o) => onToggle(o.id));
+                onClose();
+              }}
+            >
+              Add {offers.length > 1 ? "all" : "it"} · {money(offers.reduce((t, o) => t + o.price, 0))}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const SLOT_HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
@@ -46,11 +121,37 @@ export function ShootForm({
   }, []);
   const [day, setDay] = useState(ymd(days[0]));
   const [slot, setSlot] = useState<string>("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const [offers, setOffers] = useState<StockOffer[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [dialog, setDialog] = useState(false);
+  const asked = useRef("");
+
+  // Look up local-area stock packs once the address has a ZIP or city.
+  async function checkStock() {
+    if (!formRef.current) return;
+    const fd = new FormData(formRef.current);
+    const zip = String(fd.get("zip") ?? "").trim();
+    const city = String(fd.get("city") ?? "").trim();
+    const key = `${zip.slice(0, 5)}|${city.toLowerCase()}`;
+    if (key === asked.current || (!/^\d{5}/.test(zip) && city.length < 3)) return;
+    asked.current = key;
+    try {
+      const list = await stockOffers(zip, city);
+      setOffers(list);
+      setPicked((p) => p.filter((id) => list.some((o) => o.id === id)));
+      if (list.length) setDialog(true);
+    } catch {
+      /* the add-on is optional; never block booking on it */
+    }
+  }
+  const togglePack = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const pickedOffers = offers.filter((o) => picked.includes(o.id));
 
   const chosen = packages.find((p) => p.id === pkg);
   const included = new Set(chosen?.serviceIds ?? []);
   const addOns = services.filter((s) => !included.has(s.id));
-  const total = (chosen?.price ?? 0) + extras.reduce((s, id) => s + (services.find((x) => x.id === id)?.price ?? 0), 0);
+  const total = (chosen?.price ?? 0) + extras.reduce((s, id) => s + (services.find((x) => x.id === id)?.price ?? 0), 0) + pickedOffers.reduce((t, o) => t + o.price, 0);
   const duration = Math.max(60, [...included, ...extras].reduce((s, id) => s + (services.find((x) => x.id === id)?.durationMin ?? 0), 0));
 
   const slots = SLOT_HOURS.map((h) => {
@@ -61,7 +162,11 @@ export function ShootForm({
   });
 
   return (
-    <form action={action} className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+    <form ref={formRef} action={action} className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+      {picked.map((id) => (
+        <input key={id} type="hidden" name="stockPacks" value={id} />
+      ))}
+      {dialog && offers.length > 0 && <StockOfferDialog offers={offers} picked={picked} onToggle={togglePack} onClose={() => setDialog(false)} />}
       <div className="min-w-0 space-y-6">
         {clients && (
           <Card className="p-5">
@@ -88,13 +193,13 @@ export function ShootForm({
               <Input name="address" required placeholder="123 Main Street" autoComplete="street-address" />
             </Field>
             <Field label="City" className="col-span-6 sm:col-span-3">
-              <Input name="city" required placeholder="Redding" />
+              <Input name="city" required placeholder="Redding" onBlur={checkStock} />
             </Field>
             <Field label="State" className="col-span-2 sm:col-span-1">
               <Input name="state" defaultValue="CA" maxLength={2} />
             </Field>
             <Field label="ZIP" className="col-span-4 sm:col-span-2">
-              <Input name="zip" inputMode="numeric" placeholder="96001" />
+              <Input name="zip" inputMode="numeric" placeholder="96001" onBlur={checkStock} onChange={(e) => /^\d{5}$/.test(e.target.value.trim()) && checkStock()} />
             </Field>
             <Field label="Square feet" className="col-span-6 sm:col-span-2">
               <Input name="sqft" type="number" min={100} required placeholder="2,400" inputMode="numeric" />
@@ -112,6 +217,19 @@ export function ShootForm({
               <Textarea name="features" placeholder={"Pool and spa\nRV parking\nOwned solar"} className="min-h-20" />
             </Field>
           </div>
+          {offers.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setDialog(true)}
+              className="mt-4 flex w-full items-center gap-3 rounded-xl border border-dashed border-accent/50 bg-accent-soft/40 px-4 py-3 text-left text-[13px] hover:bg-accent-soft"
+            >
+              <MapPin className="size-4 shrink-0 text-accent" />
+              <span className="flex-1">
+                {pickedOffers.length ? `Local-area photos added: ${pickedOffers.map((o) => o.name).join(", ")}` : `Local-area photos are available for ${offers[0].zone}`}
+              </span>
+              <span className="font-medium text-accent">{pickedOffers.length ? "Change" : "View"}</span>
+            </button>
+          )}
         </Card>
 
         <Card className="p-5">
@@ -233,6 +351,12 @@ export function ShootForm({
                 </li>
               );
             })}
+            {pickedOffers.map((o) => (
+              <li key={o.id} className="flex justify-between gap-2">
+                <span className="text-ink-2">Local area: {o.name}</span>
+                <span className="tabular">{money(o.price)}</span>
+              </li>
+            ))}
           </ul>
           <div className="mt-3 flex justify-between border-t border-line pt-3 font-semibold">
             <span>Total</span>

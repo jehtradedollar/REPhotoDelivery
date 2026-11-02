@@ -249,7 +249,7 @@ async function catalogDuration(serviceIds: string[]) {
 async function servicesFromForm(fd: FormData) {
   const pkg = (await db.select().from(s.packages).where(eq(s.packages.id, str(fd, "package"))))[0];
   const extra = fd.getAll("services").map(String);
-  return Array.from(new Set([...(pkg?.serviceIds ?? []), ...extra]));
+  return { packageId: pkg?.id ?? null, serviceIds: Array.from(new Set([...(pkg?.serviceIds ?? []), ...extra])) };
 }
 
 function startFromForm(fd: FormData) {
@@ -325,6 +325,7 @@ async function createProjectWithShoot(input: {
   clientId: string;
   property: ReturnType<typeof propertyFromForm>;
   serviceIds: string[];
+  packageId: string | null;
   start: Date;
   notes: string | null;
   confirmed: boolean;
@@ -347,6 +348,7 @@ async function createProjectWithShoot(input: {
     shootId,
     invoiceId: null,
     serviceIds: input.serviceIds,
+    packageId: input.packageId,
     stockPackIds: input.stockPackIds,
     coverMediaId: null,
     coverSeed: Math.floor(Math.random() * 1000),
@@ -389,7 +391,7 @@ export async function createProject(fd: FormData) {
   const start = startFromForm(fd);
   if (!clientId || !property.address || !start) redirect(back("/studio/projects/new", { error: "missing" }));
   if (!property.sqft) redirect(back("/studio/projects/new", { error: "sqft" }));
-  const { project, shoot } = await createProjectWithShoot({ clientId, property, serviceIds: await servicesFromForm(fd), start, notes: str(fd, "notes") || null, confirmed: true, stockPackIds: await stockFromForm(fd, property) });
+  const { project, shoot } = await createProjectWithShoot({ clientId, property, ...(await servicesFromForm(fd)), start, notes: str(fd, "notes") || null, confirmed: true, stockPackIds: await stockFromForm(fd, property) });
   const client = (await getClient(clientId))!;
   await logActivity("booking", `Scheduled a shoot at ${project.address}`, { projectId: project.id, clientId });
   if (fd.get("notify")) await notifyShootConfirmed(client, project, shoot);
@@ -403,7 +405,7 @@ export async function bookShoot(fd: FormData) {
   const start = startFromForm(fd);
   if (!property.address || !start || start < new Date()) redirect(back("/portal/book", { error: "missing" }));
   if (!property.sqft) redirect(back("/portal/book", { error: "sqft" }));
-  const { project, shoot } = await createProjectWithShoot({ clientId: sess.clientId, property, serviceIds: await servicesFromForm(fd), start, notes: str(fd, "notes") || null, confirmed: false, stockPackIds: await stockFromForm(fd, property) });
+  const { project, shoot } = await createProjectWithShoot({ clientId: sess.clientId, property, ...(await servicesFromForm(fd)), start, notes: str(fd, "notes") || null, confirmed: false, stockPackIds: await stockFromForm(fd, property) });
   await logActivity("booking", `${sess.name} requested a shoot at ${project.address}`, { projectId: project.id, clientId: sess.clientId });
   await notifyBookingRequested((await getClient(sess.clientId))!, project, shoot);
   refresh();
@@ -604,6 +606,9 @@ export async function addTourLink(projectId: string, fd: FormData) {
 
 async function createInvoiceFor(project: Project, status: "draft" | "sent") {
   const svc = project.serviceIds.length ? await db.select().from(s.services).where(inArray(s.services.id, project.serviceIds)) : [];
+  const pkg = project.packageId ? (await db.select().from(s.packages).where(eq(s.packages.id, project.packageId)))[0] : undefined;
+  // Bill the package at its bundle price if it still covers the booked services; extras on top.
+  const bundled = pkg && pkg.serviceIds.every((id) => project.serviceIds.includes(id)) ? new Set(pkg.serviceIds) : null;
   const stock = await getStockPacks(project.stockPackIds);
   const now = new Date();
   const days = Number(process.env.INVOICE_DUE_DAYS || 7);
@@ -615,7 +620,8 @@ async function createInvoiceFor(project: Project, status: "draft" | "sent") {
     clientId: project.clientId,
     status,
     lines: [
-      ...svc.map((x) => ({ description: x.name, quantity: 1, unitPrice: x.price })),
+      ...(bundled && pkg ? [{ description: `${pkg.name} package`, quantity: 1, unitPrice: pkg.price }] : []),
+      ...svc.filter((x) => !bundled?.has(x.id)).map((x) => ({ description: x.name, quantity: 1, unitPrice: x.price })),
       ...stock.map((x) => ({ description: `Local area stock: ${x.name}`, quantity: 1, unitPrice: x.price })),
     ],
     taxRate: Number(process.env.DEFAULT_TAX_RATE || 0),
@@ -926,7 +932,8 @@ export async function saveZone(fd: FormData) {
     name: str(fd, "name"),
     zips: list(str(fd, "zips")).map((z) => z.slice(0, 5)).filter((z) => /^\d{5}$/.test(z)),
     cities: list(str(fd, "cities")),
-    active: fd.get("active") !== null ? fd.get("active") === "on" : true,
+    // Edit form posts a hidden "off" plus the checkbox's "on"; the new-zone form posts neither.
+    active: fd.has("active") ? fd.getAll("active").includes("on") : true,
   };
   if (!values.name || (!values.zips.length && !values.cities.length)) redirect(back("/studio/settings/zones", { error: "zone" }));
   await db.insert(s.zones).values({ id, ...values }).onConflictDoUpdate({ target: s.zones.id, set: values });
