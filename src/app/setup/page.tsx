@@ -7,6 +7,7 @@ import { setupOwner } from "@/lib/actions";
 import { ownerExists } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Set up your studio" };
+export const dynamic = "force-dynamic";
 
 // First run only: creates the owner account, then closes for good.
 export default async function SetupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {

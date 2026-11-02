@@ -42,6 +42,4 @@ export async function saveTemplates(t: DeliveryTemplates) {
   await setSetting("delivery_templates", t);
 }
 
-export function fill(template: string, vars: TemplateVars) {
-  return template.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? (vars[k as keyof TemplateVars] ?? "") : m));
-}
+export { fill } from "./fill";
