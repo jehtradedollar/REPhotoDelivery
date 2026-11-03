@@ -5,8 +5,8 @@ import { ShootRow } from "@/components/shoot-row";
 import { Badge, ButtonLink, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
 import { requireOwner } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { getClient, getProject, getShoots } from "@/lib/data";
-import { time } from "@/lib/format";
+import { getShoots, lookups } from "@/lib/data";
+import { dayKey, time } from "@/lib/format";
 import { calendar } from "@/lib/integrations";
 
 export const metadata: Metadata = { title: "Calendar" };
@@ -28,17 +28,22 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   gridStart.setDate(1 - first.getDay());
   const weeks = Math.ceil((first.getDay() + new Date(y, mo, 0).getDate()) / 7);
   const cells = Array.from({ length: weeks * 7 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
-  const key = (d: Date) => d.toDateString();
-  const shoots = getShoots();
+  // Grid cells are plain calendar dates; shoots are bucketed by their day in the studio's time zone.
+  const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [shoots, { client: getClient, project: getProject }] = await Promise.all([
+    getShoots({ from: new Date(gridStart.getTime() - 86_400_000), to: new Date(gridStart.getTime() + (weeks * 7 + 1) * 86_400_000) }),
+    lookups(),
+  ]);
+  const upcomingAll = await getShoots({ from: now });
   const byDay = new Map<string, typeof shoots>();
   for (const s of shoots) {
-    const k = key(new Date(s.start));
+    const k = dayKey(s.start);
     byDay.set(k, [...(byDay.get(k) ?? []), s]);
   }
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   const prev = fmt(new Date(y, mo - 2, 1));
   const next = fmt(new Date(y, mo, 1));
-  const upcoming = shoots.filter((s) => new Date(s.end) >= now && s.status !== "cancelled");
+  const upcoming = upcomingAll.filter((s) => s.status !== "cancelled");
   const connected = await calendar.isConnected();
 
   return (
@@ -49,7 +54,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
           <>
             <Badge tone={connected ? "ok" : "neutral"} className="py-1.5">
               <CalendarCheck className="size-3.5" />
-              {connected ? "Synced with Google Calendar" : "Google Calendar: demo mode"}
+              {connected ? "Synced with Google Calendar" : "Google Calendar not connected"}
             </Badge>
             <ButtonLink href="/studio/projects/new">
               <Plus /> New shoot
@@ -83,7 +88,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
         <div className="grid grid-cols-7">
           {cells.map((d, i) => {
             const inMonth = d.getMonth() === mo - 1;
-            const isToday = key(d) === key(now);
+            const isToday = key(d) === dayKey(now);
             const list = byDay.get(key(d)) ?? [];
             return (
               <div key={i} className={cn("min-h-[118px] border-line p-1.5", i % 7 !== 6 && "border-r", i < cells.length - 7 && "border-b", !inMonth && "bg-surface-2/50")}>

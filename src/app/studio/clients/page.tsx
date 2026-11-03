@@ -4,18 +4,21 @@ import Link from "next/link";
 import { Avatar, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireOwner } from "@/lib/auth";
 import { getClients, getInvoices, getProjects, invoiceTotal } from "@/lib/data";
+import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Clients" };
 
-export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string; archived?: string }> }) {
   await requireOwner();
-  const { q = "" } = await searchParams;
-  const rows = getClients()
+  const { q = "", archived } = await searchParams;
+  const [clients, allProjects, allInvoices] = await Promise.all([getClients({ includeArchived: !!archived }), getProjects(), getInvoices()]);
+  const rows = clients
+    .filter((c) => (archived ? c.archived : true))
     .filter((c) => !q || `${c.name} ${c.email} ${c.brokerage}`.toLowerCase().includes(q.toLowerCase()))
     .map((c) => {
-      const projects = getProjects({ clientId: c.id });
-      const invoices = getInvoices({ clientId: c.id });
+      const projects = allProjects.filter((p) => p.clientId === c.id);
+      const invoices = allInvoices.filter((i) => i.clientId === c.id);
       return {
         c,
         projects: projects.length,
@@ -36,10 +39,26 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           </ButtonLink>
         }
       />
-      <form className="relative mb-5 md:w-80">
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
-        <input name="q" defaultValue={q} placeholder="Search name, email or brokerage" className="field pl-9" />
-      </form>
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <form className="relative md:w-80">
+          {archived && <input type="hidden" name="archived" value="1" />}
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
+          <input name="q" defaultValue={q} placeholder="Search name, email or brokerage" className="field pl-9" />
+        </form>
+        <div className="flex gap-1.5">
+          {[
+            { label: "Active", href: "/studio/clients", on: !archived },
+            { label: "Archived", href: "/studio/clients?archived=1", on: !!archived },
+          ].map((t) => (
+            <Link key={t.label} href={t.href} className={cn("rounded-full border px-3.5 py-1.5 text-[13px] font-medium", t.on ? "border-ink bg-ink text-bg" : "border-line bg-surface text-ink-2 hover:border-line-strong")}>
+              {t.label}
+            </Link>
+          ))}
+          <Link href="/studio/brokerages" className="rounded-full border border-line bg-surface px-3.5 py-1.5 text-[13px] font-medium text-ink-2 hover:border-line-strong">
+            Brokerages
+          </Link>
+        </div>
+      </div>
       <Card>
         {rows.length === 0 ? (
           <EmptyState icon={<Users />} title="No clients found" />

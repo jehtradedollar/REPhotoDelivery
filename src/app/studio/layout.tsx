@@ -1,10 +1,16 @@
 import { AppShell, type NavItem } from "@/components/app-shell";
 import { requireOwner } from "@/lib/auth";
-import { db } from "@/lib/data";
+import { and, eq, gte, sql } from "drizzle-orm";
+import { db, schema as s } from "@/db";
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
   const user = await requireOwner();
-  const requests = db.shoots.filter((s) => s.status === "requested").length;
+  const requests = (
+    await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(s.shoots)
+      .where(and(eq(s.shoots.status, "requested"), gte(s.shoots.end, new Date().toISOString())))
+  )[0].n;
   const nav: NavItem[] = [
     { href: "/studio", label: "Dashboard", icon: "dashboard", primary: true, exact: true },
     { href: "/studio/calendar", label: "Calendar", icon: "calendar", primary: true, badge: requests },

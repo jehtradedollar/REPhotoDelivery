@@ -10,7 +10,7 @@ import type {
   Project,
   Service,
   Shoot,
-} from "./types";
+} from "./seed-types";
 
 const DAY = 86_400_000;
 

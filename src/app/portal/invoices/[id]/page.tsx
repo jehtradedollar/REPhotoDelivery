@@ -14,8 +14,9 @@ export const metadata: Metadata = { title: "Invoice" };
 
 export default async function PortalInvoice({ params }: { params: Promise<{ id: string }> }) {
   const s = await requireClient();
-  const inv = getInvoice((await params).id);
+  const inv = await getInvoice((await params).id);
   if (!inv || inv.clientId !== s.clientId || inv.status === "draft") notFound();
+  const [client, project] = await Promise.all([getClient(inv.clientId), getProject(inv.projectId)]);
   const open = inv.status === "sent" || inv.status === "overdue";
   return (
     <div className="mx-auto max-w-3xl">
@@ -28,13 +29,13 @@ export default async function PortalInvoice({ params }: { params: Promise<{ id: 
             View property
           </Link>
           {open && (
-            <form action={startCheckout.bind(null, inv.id)}>
+            <form action={startCheckout.bind(null, inv.id, undefined)}>
               <SubmitButton size="sm">Pay {money(invoiceTotal(inv).total)}</SubmitButton>
             </form>
           )}
         </div>
       </div>
-      <InvoiceDocument invoice={inv} client={getClient(inv.clientId)} project={getProject(inv.projectId)} />
+      <InvoiceDocument invoice={inv} client={client} project={project} />
     </div>
   );
 }

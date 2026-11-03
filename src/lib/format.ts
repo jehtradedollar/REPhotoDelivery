@@ -1,25 +1,33 @@
-export const money = (cents: number) =>
-  (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+// Formatting helpers. Dates render in the studio's time zone so server
+// (often UTC) and browser agree. Set NEXT_PUBLIC_STUDIO_TIMEZONE, e.g. America/Los_Angeles.
+export const TZ = process.env.NEXT_PUBLIC_STUDIO_TIMEZONE || undefined;
 
-export const moneyShort = (cents: number) =>
-  (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+export const money = (cents: number) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+export const moneyShort = (cents: number) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 export const date = (iso: string, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" }) =>
-  new Date(iso).toLocaleDateString("en-US", opts);
+  new Date(iso).toLocaleDateString("en-US", { timeZone: TZ, ...opts });
 
-export const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+export const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: TZ });
+
+/** Calendar day in the studio's time zone, as YYYY-MM-DD. */
+export const dayKey = (d: string | Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d));
+  return parts; // en-CA formats as YYYY-MM-DD
+};
+
+/** Hour of day (0-23) in the studio's time zone. */
+export const hourOf = (d: string | Date) => Number(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }).format(new Date(d)));
+
+const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
 
 export const dayLabel = (iso: string) => {
-  const d = new Date(iso);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const that = new Date(d);
-  that.setHours(0, 0, 0, 0);
-  const diff = Math.round((that.getTime() - today.getTime()) / 86_400_000);
+  const diff = dayDiff(dayKey(iso), dayKey(new Date()));
   if (diff === 0) return "Today";
   if (diff === 1) return "Tomorrow";
   if (diff === -1) return "Yesterday";
-  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  return date(iso, { weekday: "short", month: "short", day: "numeric" });
 };
 
 export const relative = (iso: string) => {
@@ -41,7 +49,11 @@ export const bytes = (n: number) => {
 };
 
 export const initials = (name: string) =>
-  name.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+  name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
-export const fullAddress = (p: { address: string; city: string; state: string; zip: string }) =>
-  `${p.address}, ${p.city}, ${p.state} ${p.zip}`;
+export const fullAddress = (p: { address: string; city: string; state: string; zip: string }) => [p.address, p.city, [p.state, p.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");

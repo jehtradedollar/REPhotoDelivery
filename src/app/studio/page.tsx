@@ -7,9 +7,8 @@ import { SubmitButton } from "@/components/submit-button";
 import { ButtonLink, Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { confirmShoot } from "@/lib/actions";
 import { requireOwner } from "@/lib/auth";
-import { db, getActivity, getClient, getProject, invoiceTotal } from "@/lib/data";
-import { money, relative, time } from "@/lib/format";
-import { revenueHistory } from "@/lib/mock-data";
+import { getActivity, getInvoices, getProjects, getShoots, invoiceTotal, lookups } from "@/lib/data";
+import { date, dayKey, hourOf, money, relative, time } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -22,37 +21,44 @@ export default async function Dashboard() {
   startOfToday.setHours(0, 0, 0, 0);
   const weekEnd = new Date(startOfToday.getTime() + 7 * 86_400_000);
 
-  const upcoming = db.shoots
-    .filter((s) => new Date(s.end) >= now && s.status !== "cancelled" && s.status !== "completed")
-    .sort((a, b) => a.start.localeCompare(b.start));
+  const [shoots, projects, invoices, activity, { client: getClient, project: getProject }] = await Promise.all([
+    getShoots({ from: now }),
+    getProjects(),
+    getInvoices(),
+    getActivity(7),
+    lookups(),
+  ]);
+  const upcoming = shoots.filter((s) => s.status !== "cancelled" && s.status !== "completed");
   const thisWeek = upcoming.filter((s) => new Date(s.start) < weekEnd);
-  const today = upcoming.filter((s) => new Date(s.start).toDateString() === now.toDateString());
+  const today = upcoming.filter((s) => dayKey(s.start) === dayKey(now));
   const requested = upcoming.filter((s) => s.status === "requested");
-  const editing = db.projects.filter((p) => p.status === "editing");
-  const unpaid = db.invoices.filter((i) => i.status === "sent" || i.status === "overdue");
+  const editing = projects.filter((p) => p.status === "editing");
+  const unpaid = invoices.filter((i) => i.status === "sent" || i.status === "overdue");
   const overdue = unpaid.filter((i) => i.status === "overdue");
   const outstanding = unpaid.reduce((s, i) => s + invoiceTotal(i).total, 0);
 
-  const monthPaid = db.invoices
-    .filter((i) => i.paidAt && new Date(i.paidAt).getMonth() === now.getMonth() && new Date(i.paidAt).getFullYear() === now.getFullYear())
-    .reduce((s, i) => s + invoiceTotal(i).total, 0);
-  const months = Array.from({ length: 6 }, (_, k) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - 5 + k, 1);
-    return d.toLocaleDateString("en-US", { month: "short" });
+  // Paid revenue by calendar month (studio time zone), last six months.
+  const monthKey = (iso: string) => dayKey(iso).slice(0, 7);
+  const paidByMonth = new Map<string, number>();
+  for (const i of invoices) if (i.status === "paid" && i.paidAt) paidByMonth.set(monthKey(i.paidAt), (paidByMonth.get(monthKey(i.paidAt)) ?? 0) + invoiceTotal(i).total);
+  const chart = Array.from({ length: 6 }, (_, k) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + k, 15);
+    return { label: date(d.toISOString(), { month: "short" }), value: paidByMonth.get(monthKey(d.toISOString())) ?? 0, current: k === 5 };
   });
-  const chart = months.map((label, k) => ({ label, value: k === 5 ? monthPaid : revenueHistory[k], current: k === 5 }));
+  const monthPaid = chart[5].value;
 
-  const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
+  const hour = hourOf(now);
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <>
       <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="mb-1.5 text-[13px] font-medium text-muted">
-            {now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            {date(now.toISOString(), { weekday: "long", month: "long", day: "numeric" })}
           </div>
           <h1 className="font-display text-[28px] leading-tight font-medium tracking-tight sm:text-[34px]">
-            {greeting}, {user.name}
+            {greeting}, {user.name.split(" ")[0]}
           </h1>
           <p className="mt-1.5 text-[15px] text-ink-2">
             {today.length === 0
@@ -75,7 +81,7 @@ export default async function Dashboard() {
         <Stat label="Shoots this week" value={thisWeek.length} sub={`${requested.length} awaiting confirmation`} icon={<CalendarClock />} href="/studio/calendar" />
         <Stat label="In editing" value={editing.length} sub="Ready to upload and deliver" icon={<ImageUp />} href="/studio/projects?status=editing" />
         <Stat label="Outstanding" value={money(outstanding)} sub={overdue.length ? `${overdue.length} overdue` : "Nothing overdue"} icon={<Receipt />} href="/studio/invoices" />
-        <Stat label="Paid this month" value={money(monthPaid)} sub={`${db.invoices.filter((i) => i.status === "paid").length} invoices paid all time`} icon={<CircleDollarSign />} />
+        <Stat label="Paid this month" value={money(monthPaid)} sub={`${invoices.filter((i) => i.status === "paid").length} invoices paid all time`} icon={<CircleDollarSign />} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr] [&>*]:min-w-0">
@@ -159,7 +165,7 @@ export default async function Dashboard() {
           <Card>
             <CardHeader title="Recent activity" />
             <ul className="space-y-0 px-5 py-2">
-              {getActivity().slice(0, 7).map((a) => {
+              {activity.map((a) => {
                 const Icon = activityIcon[a.kind];
                 return (
                   <li key={a.id} className="flex gap-3 py-2.5">

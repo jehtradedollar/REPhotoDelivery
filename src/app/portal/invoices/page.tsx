@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Invoices" };
 
 export default async function PortalInvoices() {
   const s = await requireClient();
-  const list = getInvoices({ clientId: s.clientId }).filter((i) => i.status !== "draft");
+  const list = (await getInvoices({ clientId: s.clientId })).filter((i) => i.status !== "draft");
   return (
     <>
       <PageHeader title="Invoices" description="Receipts and open balances for each property." />

@@ -1,11 +1,12 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { getClient, getProject, invoiceTotal } from "@/lib/data";
+import { invoiceTotal, lookups } from "@/lib/data";
 import { date, money } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 import { InvoiceStatusBadge } from "./ui";
 
-export function InvoiceTable({ invoices, hrefBase, showClient = true }: { invoices: Invoice[]; hrefBase: string; showClient?: boolean }) {
+export async function InvoiceTable({ invoices, hrefBase, showClient = true }: { invoices: Invoice[]; hrefBase: string; showClient?: boolean }) {
+  const { client: getClient, project: getProject } = await lookups();
   return (
     <>
       <div className="hidden grid-cols-[0.9fr_2fr_1.2fr_1fr_1fr_1fr_20px] gap-4 border-b border-line px-5 py-2.5 text-[12px] font-medium text-muted md:grid">

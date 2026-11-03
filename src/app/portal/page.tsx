@@ -5,16 +5,18 @@ import { PropertyCard } from "@/components/property-card";
 import { ShootRow } from "@/components/shoot-row";
 import { ButtonLink, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
 import { requireClient } from "@/lib/auth";
-import { getInvoices, getProject, getShoots, invoiceTotal, projectRows } from "@/lib/data";
+import { getInvoices, getShoots, invoiceTotal, lookups, projectRows } from "@/lib/data";
 import { money } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Your properties" };
 
 export default async function PortalHome() {
   const s = await requireClient();
-  const rows = projectRows({ clientId: s.clientId }).filter((r) => r.project.status !== "archived");
-  const unpaid = getInvoices({ clientId: s.clientId }).filter((i) => i.status === "sent" || i.status === "overdue");
-  const upcoming = getShoots({ clientId: s.clientId }).filter((x) => new Date(x.end) > new Date() && x.status !== "cancelled" && x.status !== "completed");
+  const [allRows, invoices, shoots, look] = await Promise.all([projectRows({ clientId: s.clientId }), getInvoices({ clientId: s.clientId }), getShoots({ clientId: s.clientId, from: new Date() }), lookups()]);
+  const rows = allRows.filter((r) => r.project.status !== "archived");
+  const unpaid = invoices.filter((i) => i.status === "sent" || i.status === "overdue");
+  const upcoming = shoots.filter((x) => x.status !== "cancelled" && x.status !== "completed");
+  const getProject = look.project;
 
   return (
     <>

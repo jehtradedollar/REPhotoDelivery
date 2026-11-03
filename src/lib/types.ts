@@ -1,139 +1,54 @@
-// Domain model for the photo delivery platform.
-// These types are what the UI renders. When a real database is added, keep
-// these shapes and swap the implementation in `src/lib/data.ts`.
+// Domain types, inferred from the database schema so the two never drift.
+import type * as s from "@/db/schema";
 
 export type ID = string;
-
 export type Role = "owner" | "client";
 
-export interface Client {
-  id: ID;
-  name: string;
-  email: string;
-  phone: string;
-  brokerage: string;
-  /** Initials-avatar background hue (0-360). */
-  hue: number;
-  createdAt: string; // ISO
-  notes?: string;
-}
+export type Client = typeof s.clients.$inferSelect;
+export type User = typeof s.users.$inferSelect;
+export type Service = typeof s.services.$inferSelect;
+export type Package = typeof s.packages.$inferSelect;
+export type Project = typeof s.projects.$inferSelect;
+export type Shoot = typeof s.shoots.$inferSelect;
+export type MediaItem = typeof s.media.$inferSelect;
+export type Invoice = typeof s.invoices.$inferSelect;
+export type ActivityEvent = typeof s.activity.$inferSelect;
+export type InvoiceLine = s.InvoiceLineRow;
+export type StagingRequest = typeof s.stagingRequests.$inferSelect;
 
-export type ServiceKind = "photo" | "drone" | "video" | "floorplan" | "tour" | "twilight";
-
-export interface Service {
-  id: ID;
-  name: string;
-  kind: ServiceKind;
-  description: string;
-  price: number; // cents
-  durationMin: number;
-}
-
-export interface Package {
-  id: ID;
-  name: string;
-  description: string;
-  serviceIds: ID[];
-  price: number; // cents
-  popular?: boolean;
-}
-
-export type ProjectStatus =
-  | "scheduled" // shoot booked, not yet shot
-  | "editing" // shot, media being edited
-  | "delivered" // media uploaded and shared, may be awaiting payment
-  | "archived";
-
-export interface Project {
-  id: ID;
-  clientId: ID;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-  beds?: number;
-  baths?: number;
-  sqft?: number;
-  status: ProjectStatus;
-  shootId?: ID;
-  invoiceId?: ID;
-  serviceIds: ID[];
-  createdAt: string;
-  deliveredAt?: string;
-  /** Cover image seed used by the placeholder renderer. */
-  coverSeed: number;
-}
-
-export type MediaKind = "photo" | "video" | "floorplan" | "tour";
-
-export interface MediaItem {
-  id: ID;
-  projectId: ID;
-  kind: MediaKind;
-  filename: string;
-  /** Storage object key, e.g. projects/<id>/<filename>. Resolved to a URL by the storage provider. */
-  storageKey: string;
-  sizeBytes: number;
-  width?: number;
-  height?: number;
-  durationSec?: number;
-  /** For tours: external URL (Matterport etc). */
-  externalUrl?: string;
-  seed: number;
-  uploadedAt: string;
-}
-
-export type ShootStatus = "requested" | "confirmed" | "completed" | "cancelled";
-
-export interface Shoot {
-  id: ID;
-  projectId: ID;
-  clientId: ID;
-  start: string; // ISO
-  end: string; // ISO
-  status: ShootStatus;
-  photographer: string;
-  accessNotes?: string;
-  /** Google Calendar event id once synced. */
-  calendarEventId?: string;
-}
-
-export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "void";
-
-export interface InvoiceLine {
-  description: string;
-  quantity: number;
-  unitPrice: number; // cents
-}
-
-export interface Invoice {
-  id: ID;
-  number: string;
-  projectId: ID;
-  clientId: ID;
-  status: InvoiceStatus;
-  lines: InvoiceLine[];
-  taxRate: number; // 0.0725 = 7.25%
-  issuedAt: string;
-  dueAt: string;
-  paidAt?: string;
-  /** Stripe checkout session / payment intent id once paid. */
-  paymentRef?: string;
-}
-
-export interface ActivityEvent {
-  id: ID;
-  at: string;
-  kind: "booking" | "upload" | "payment" | "download" | "client" | "delivery";
-  text: string;
-  projectId?: ID;
-  clientId?: ID;
-}
+export type ServiceKind = Service["kind"];
+export type ProjectStatus = Project["status"];
+export type MediaKind = MediaItem["kind"];
+export type ShootStatus = Shoot["status"];
+export type InvoiceStatus = Invoice["status"];
 
 export interface Session {
+  userId: string;
   role: Role;
-  /** For clients, which client record they are. */
-  clientId?: ID;
+  /** For agents, which client record they belong to. */
+  clientId?: string;
   name: string;
   email: string;
+}
+
+/** Media as sent to the browser: storage keys swapped for short-lived URLs. */
+export interface MediaView {
+  id: string;
+  kind: MediaKind;
+  filename: string;
+  sizeBytes: number;
+  width: number | null;
+  height: number | null;
+  durationSec: number | null;
+  externalUrl: string | null;
+  seed: number;
+  thumbUrl: string | null;
+  /** Large view: watermarked preview before payment, clean web size after. */
+  viewUrl: string | null;
+  /** Gallery section: "local" is stock media of the area, "staged" is virtual staging. */
+  group?: "local" | "staged";
+  /** Full-quality original; null for embedded links. */
+  downloadUrl: string | null;
+  /** The 2048px, under-1 MB JPEG for MLS uploads. Photos only. */
+  mlsUrl: string | null;
 }
