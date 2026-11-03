@@ -32,7 +32,7 @@ Every outside service is optional in development. Without keys the app uses stan
 - Galleries by photos, virtual staging, video, floor plans, embedded links and local area. Watermarked previews until paid; then **Full quality** or **MLS** downloads, one at a time, selected, or as a zip.
 - Pay online (Stripe Checkout) to unlock.
 - Book a shoot: square footage required; beds, baths, acreage and features optional. If the address is inside a studio **location zone**, a pop-up offers local-area stock photo packs as an add-on.
-- **Virtual staging**: pick empty rooms, choose room type and style, describe the furniture, pay per photo; staged images arrive in the gallery.
+- **Virtual staging**: a paid add-on. The agent pays once per property to unlock it, then picks any number of rooms, chooses room type and style, and describes the furniture; staged images arrive in the gallery.
 - **Property websites** for every listing: three templates (Classic, Modern, Minimal), editable headline and MLS description, branded (`/p/<slug>`) and unbranded for MLS (`/p/<slug>/u`). Branding comes from the agent's own logo or their linked brokerage, plus their profile photo.
 - Account: profile, photo, logo, brokerage link, password.
 

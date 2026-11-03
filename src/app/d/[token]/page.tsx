@@ -65,7 +65,7 @@ export default async function DeliveryPage({
           unlocked={unlocked}
           hero={hero}
           token={token}
-          flash={{ paid: !!q.paid, payOffline: q.pay === "offline", staging: !!q.staging }}
+          flash={{ paid: !!q.paid, payOffline: q.pay === "offline", staging: q.staging === "unlocked" ? "unlocked" : q.staging ? "sent" : undefined }}
         staging={stagingInfo}
         />
         <p className="mt-10 text-center text-[13px] text-muted">

@@ -26,8 +26,8 @@ export interface DeliveryViewProps {
   hero: string | null;
   /** Set on the stand-alone page; carried into download and payment links. */
   token?: string;
-  flash?: { paid?: boolean; booked?: boolean; payOffline?: boolean; staging?: boolean };
-  staging?: { price: number; offered: boolean; canOrder: boolean; photos: { id: string; thumbUrl: string | null; filename: string }[]; requests: StagingRequest[] } | null;
+  flash?: { paid?: boolean; booked?: boolean; payOffline?: boolean; staging?: "unlocked" | "sent" };
+  staging?: { price: number; offered: boolean; canOrder: boolean; stagingUnlocked: boolean; photos: { id: string; thumbUrl: string | null; filename: string }[]; requests: StagingRequest[] } | null;
 }
 
 const stagingStatus: Record<StagingRequest["status"], string> = {
@@ -57,7 +57,12 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
       )}
       {flash.staging && (
         <div className="mb-4 flex items-center gap-2 rounded-xl bg-ok-soft px-4 py-3 text-[14px] text-ok">
-          <Sofa className="size-5 shrink-0" /> Virtual staging ordered. Staged photos will appear in your gallery when they&apos;re ready.
+          <Sofa className="size-5 shrink-0" />{" "}
+          {flash.staging === "unlocked"
+            ? staging?.stagingUnlocked
+              ? "Virtual staging is unlocked. Stage as many photos as you like."
+              : "Thanks! We're confirming your payment; staging unlocks in a moment."
+            : "Photos sent for staging. They'll appear in your gallery when they're ready."}
         </div>
       )}
       {flash.booked && (
@@ -127,7 +132,7 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
           )}
 
           {delivered && staging?.offered && staging.canOrder && (
-            <StagingOffer projectId={p.id} token={token} photos={staging.photos} price={staging.price} canOrder={staging.canOrder} roomTypes={ROOM_TYPES} styles={STYLES} />
+            <StagingOffer projectId={p.id} token={token} photos={staging.photos} price={staging.price} canOrder={staging.canOrder} stagingUnlocked={staging.stagingUnlocked} roomTypes={ROOM_TYPES} styles={STYLES} />
           )}
 
           <Card>
@@ -153,7 +158,7 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
           </Card>
 
           {delivered && staging?.offered && !staging.canOrder && (
-            <StagingOffer projectId={p.id} token={token} photos={staging.photos} price={staging.price} canOrder={false} roomTypes={ROOM_TYPES} styles={STYLES} />
+            <StagingOffer projectId={p.id} token={token} photos={staging.photos} price={staging.price} canOrder={false} stagingUnlocked={false} roomTypes={ROOM_TYPES} styles={STYLES} />
           )}
         </div>
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema as s } from "@/db";
 import { getMediaItem, getProject, logActivity, newId } from "./data";
 import { imageDerivatives } from "./image-server";
@@ -13,7 +13,7 @@ export { ROOM_TYPES, STYLES } from "./staging-options";
 
 export interface StagingConfig {
   enabled: boolean;
-  /** Price per photo, in cents. */
+  /** One-time price that unlocks unlimited staging for a property, in cents. */
   price: number;
 }
 const DEFAULT_CONFIG: StagingConfig = { enabled: true, price: 2900 };
@@ -27,13 +27,34 @@ export async function stagingRequestsFor(projectId: string) {
   return db.select().from(s.stagingRequests).where(eq(s.stagingRequests.projectId, projectId)).orderBy(s.stagingRequests.createdAt);
 }
 
-/** Called once a staging invoice is paid: queue its requests and send them to the provider. */
+/** Called when an invoice is paid: if it's a property's staging unlock, record it. */
+export async function unlockStagingForInvoice(invoiceId: string) {
+  const rows = await db
+    .update(s.projects)
+    .set({ stagingUnlockedAt: new Date().toISOString() })
+    .where(and(eq(s.projects.stagingInvoiceId, invoiceId), isNull(s.projects.stagingUnlockedAt)))
+    .returning({ id: s.projects.id });
+  return rows.length > 0;
+}
+
+/** Queue new requests and send them to the provider (or tell the studio, in manual mode). */
+export async function startStaging(ids: string[]) {
+  if (!ids.length) return;
+  const reqs = await db.select().from(s.stagingRequests).where(inArray(s.stagingRequests.id, ids));
+  await runRequests(reqs);
+}
+
+/** Older per-photo orders: queue an invoice's requests once it is paid. */
 export async function startStagingForInvoice(invoiceId: string) {
   const reqs = await db
     .update(s.stagingRequests)
     .set({ status: "queued" })
     .where(and(eq(s.stagingRequests.invoiceId, invoiceId), eq(s.stagingRequests.status, "awaiting_payment")))
     .returning();
+  await runRequests(reqs);
+}
+
+async function runRequests(reqs: StagingRequest[]) {
   if (!reqs.length) return;
   for (const r of reqs) await submitStaging(r);
   if (staging.name === "manual") {
@@ -44,7 +65,7 @@ export async function startStagingForInvoice(invoiceId: string) {
         mailer.send({
           to: o.email,
           subject: `Virtual staging ordered: ${project?.address}`,
-          lines: [`${reqs.length} photo${reqs.length > 1 ? "s were" : " was"} paid for virtual staging at ${project?.address}.`, "No staging API is connected, so upload the staged photos from the project page."],
+          lines: [`The agent asked for virtual staging on ${reqs.length} photo${reqs.length > 1 ? "s" : ""} at ${project?.address}.`, "No staging API is connected, so upload the staged photos from the project page."],
           action: { label: "Open project", url: appUrl(`/studio/projects/${reqs[0].projectId}`) },
         }),
       ),
@@ -153,8 +174,10 @@ export async function stagingOffer(projectId: string, unlocked: boolean, photos:
   }
   const eligible = photos.filter((p) => p.kind === "photo" && !p.group).map((p) => ({ id: p.id, thumbUrl: p.thumbUrl, filename: p.filename }));
   const visible = requests.filter((r) => r.status !== "awaiting_payment" && r.status !== "cancelled");
+  const project = await getProject(projectId);
+  const stagingUnlocked = !!project?.stagingUnlockedAt;
   const offered = config.enabled && eligible.length > 0;
   if (!offered && !visible.length) return null;
-  // The offer shows on locked galleries too, so agents see it before paying; ordering waits for payment.
-  return { price: config.price, offered, canOrder: offered && unlocked, photos: eligible, requests: visible };
+  // The offer shows on locked galleries too, so agents see it before paying; buying waits for the gallery payment.
+  return { price: config.price, offered, canOrder: offered && unlocked, stagingUnlocked, photos: eligible, requests: visible };
 }

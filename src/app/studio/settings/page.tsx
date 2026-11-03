@@ -15,7 +15,7 @@ const icons = { storage: HardDrive, payments: CreditCard, calendar: CalendarDays
 const sections = [
   { href: "/studio/settings/messages", icon: MessageSquare, title: "Delivery email and text", body: "What agents receive when you mark a project delivered" },
   { href: "/studio/settings/catalog", icon: Package, title: "Services and packages", body: "Prices and bundles agents can book" },
-  { href: "/studio/settings/staging", icon: Sofa, title: "Virtual staging", body: "Per-photo price for AI staging agents order after delivery" },
+  { href: "/studio/settings/staging", icon: Sofa, title: "Virtual staging", body: "One-time unlock price agents pay per property for AI staging" },
   { href: "/studio/settings/zones", icon: MapPin, title: "Location zones and stock media", body: "Local-area photo packs offered when booking inside a zone" },
   { href: "/studio/brokerages", icon: Building2, title: "Brokerages", body: "Logos and colors agents inherit on property websites" },
 ];

@@ -7,7 +7,7 @@ import { money } from "./format";
 import { payments } from "./integrations";
 import { invoiceTotal } from "./invoice";
 import { notifyPaid } from "./notify";
-import { startStagingForInvoice } from "./staging";
+import { startStagingForInvoice, unlockStagingForInvoice } from "./staging";
 
 /** Mark an invoice paid once (safe to call from the webhook and the return page). */
 export async function markInvoicePaid(invoiceId: string, paymentRef: string, opts: { revalidate?: boolean } = {}) {
@@ -21,8 +21,11 @@ export async function markInvoicePaid(invoiceId: string, paymentRef: string, opt
   const [project, client] = await Promise.all([getProject(inv.projectId), getClient(inv.clientId)]);
   await logActivity("payment", `Payment received for ${inv.number} (${money(invoiceTotal(inv).total)})`, { projectId: inv.projectId, clientId: inv.clientId });
   const staged = (await db.select({ id: s.stagingRequests.id }).from(s.stagingRequests).where(eq(s.stagingRequests.invoiceId, invoiceId)).limit(1)).length > 0;
+  const stagingUnlock = await unlockStagingForInvoice(invoiceId);
   if (staged) await startStagingForInvoice(invoiceId);
-  else if (project && client && paymentRef !== "manual") await notifyPaid(client, project, inv);
+  else if (stagingUnlock) {
+    // Nothing to send: the agent picks photos on the delivery page now.
+  } else if (project && client && paymentRef !== "manual") await notifyPaid(client, project, inv);
   // Pages rendering this call (the Stripe return) can't revalidate mid-render.
   if (opts.revalidate !== false) revalidatePath("/", "layout");
   return true;

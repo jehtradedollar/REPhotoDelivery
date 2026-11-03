@@ -32,7 +32,7 @@ import { mediaKey } from "./integrations/storage";
 import { newToken } from "./ids";
 import { invoiceTotal, nextInvoiceNumber } from "./invoice";
 import { mockCheckoutAllowed } from "./integrations/payments";
-import { getStagingConfig, ingestStaged, pollStaging, ROOM_TYPES, saveStagingConfig, STYLES } from "./staging";
+import { getStagingConfig, ingestStaged, pollStaging, ROOM_TYPES, saveStagingConfig, startStaging, STYLES } from "./staging";
 import { getStockPacks, packsFor } from "./stock";
 import {
   notifyBookingRequested,
@@ -351,6 +351,8 @@ async function createProjectWithShoot(input: {
     serviceIds: input.serviceIds,
     packageId: input.packageId,
     stockPackIds: input.stockPackIds,
+    stagingInvoiceId: null,
+    stagingUnlockedAt: null,
     coverMediaId: null,
     coverSeed: Math.floor(Math.random() * 1000),
     deliveredAt: null,
@@ -1033,12 +1035,8 @@ export interface StagingChoice {
   prompt: string;
 }
 
-/**
- * Agent orders virtual staging for some photos: makes a small invoice for the
- * order, then sends them to checkout. Staging starts once it's paid.
- */
-export async function orderStaging(projectId: string, tokenArg: string, fd: FormData) {
-  const choicesJson = String(fd.get("choices") ?? "[]");
+/** Shared checks for the staging actions; redirects away when the viewer can't use them. */
+async function stagingContext(projectId: string, tokenArg: unknown) {
   const token = typeof tokenArg === "string" && tokenArg ? tokenArg : undefined;
   const project = await getProject(projectId);
   const viewer = project && (await viewerFor(project, token));
@@ -1046,10 +1044,69 @@ export async function orderStaging(projectId: string, tokenArg: string, fd: Form
   if (!project || !viewer || viewer.kind === "owner") redirect(token ? backPath : "/portal");
   const config = await getStagingConfig();
   if (!config.enabled || !(await isUnlocked(project))) redirect(backPath);
+  return { project, viewer, backPath, config };
+}
+
+/**
+ * Agent buys the virtual staging add-on for a property: one payment, then
+ * unlimited photos. Makes (or reuses) the unlock invoice and sends them to checkout.
+ */
+export async function unlockStaging(projectId: string, tokenArg: string) {
+  const { project, viewer, backPath, config } = await stagingContext(projectId, tokenArg);
+  if (project.stagingUnlockedAt) redirect(backPath);
+
+  let invoiceId = project.stagingInvoiceId;
+  const existing = invoiceId ? await getInvoice(invoiceId) : undefined;
+  if (!existing || existing.status === "void") {
+    invoiceId = newId("inv");
+    const now = new Date().toISOString();
+    await db.transaction(async (tx) => {
+      await tx.insert(s.invoices).values({
+        id: invoiceId!,
+        number: nextInvoiceNumber(await allInvoiceNumbers()),
+        projectId,
+        clientId: project.clientId,
+        status: "sent",
+        lines: [{ description: `Virtual staging, unlimited photos: ${project.address}`, quantity: 1, unitPrice: config.price }],
+        taxRate: Number(process.env.DEFAULT_TAX_RATE || 0),
+        issuedAt: now,
+        dueAt: now,
+      });
+      await tx.update(s.projects).set({ stagingInvoiceId: invoiceId }).where(eq(s.projects.id, projectId));
+    });
+    await logActivity("booking", `${viewer.kind === "link" ? "Agent" : viewer.name} started unlocking virtual staging at ${project.address}`, { projectId, clientId: project.clientId });
+  }
+
+  if (config.price === 0) {
+    await markInvoicePaid(invoiceId!, "free");
+    redirect(back(backPath, { staging: "unlocked" }));
+  }
+  if (payments.name === "mock" && !mockCheckoutAllowed()) redirect(back(backPath, { pay: "offline" }));
+  const inv = (await getInvoice(invoiceId!))!;
+  const client = await getClient(project.clientId);
+  const checkout = await payments.createCheckoutSession({
+    invoiceId: invoiceId!,
+    invoiceNumber: inv.number,
+    amountCents: invoiceTotal(inv).total,
+    customerEmail: client?.email ?? "",
+    description: `Virtual staging, unlimited photos · ${project.address}`,
+    successUrl: appUrl(`${backPath}?staging=unlocked`),
+    cancelUrl: appUrl(backPath),
+  });
+  redirect(checkout.url);
+}
+
+/**
+ * Agent sends photos for staging, with a room, style and furniture description
+ * for each. Needs the property's staging unlocked; no further payment.
+ */
+export async function orderStaging(projectId: string, tokenArg: string, fd: FormData) {
+  const { project, viewer, backPath } = await stagingContext(projectId, tokenArg);
+  if (!project.stagingUnlockedAt) redirect(backPath);
 
   let raw: StagingChoice[] = [];
   try {
-    raw = JSON.parse(choicesJson);
+    raw = JSON.parse(String(fd.get("choices") ?? "[]"));
   } catch {
     redirect(backPath);
   }
@@ -1065,47 +1122,17 @@ export async function orderStaging(projectId: string, tokenArg: string, fd: Form
     }));
   if (!choices.length) redirect(backPath);
 
-  const invoiceId = newId("inv");
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx.insert(s.invoices).values({
-      id: invoiceId,
-      number: nextInvoiceNumber(await allInvoiceNumbers()),
-      projectId,
-      clientId: project.clientId,
-      status: "sent",
-      lines: choices.map((c) => ({ description: `Virtual staging: ${photos.find((m) => m.id === c.mediaId)!.filename} (${c.roomType}, ${c.style})`, quantity: 1, unitPrice: config.price })),
-      taxRate: Number(process.env.DEFAULT_TAX_RATE || 0),
-      issuedAt: now.toISOString(),
-      dueAt: now.toISOString(),
-    });
-    await tx.insert(s.stagingRequests).values(choices.map((c) => ({ id: newId("stg"), projectId, invoiceId, status: "awaiting_payment" as const, ...c })));
-  });
-  await logActivity("booking", `${viewer.kind === "link" ? "Agent" : viewer.name} ordered virtual staging for ${choices.length} photo${choices.length > 1 ? "s" : ""} at ${project.address}`, {
+  const rows = choices.map((c) => ({ id: newId("stg"), projectId, invoiceId: project.stagingInvoiceId, status: "queued" as const, ...c }));
+  await db.insert(s.stagingRequests).values(rows);
+  await logActivity("booking", `${viewer.kind === "link" ? "Agent" : viewer.name} sent ${choices.length} photo${choices.length > 1 ? "s" : ""} for virtual staging at ${project.address}`, {
     projectId,
     clientId: project.clientId,
   });
-
-  if (config.price === 0) {
-    await markInvoicePaid(invoiceId, "free");
-    redirect(back(backPath, { staging: "1" }));
-  }
-  if (payments.name === "mock" && !mockCheckoutAllowed()) redirect(back(backPath, { pay: "offline" }));
-  const inv = (await getInvoice(invoiceId))!;
-  const client = await getClient(project.clientId);
-  const checkout = await payments.createCheckoutSession({
-    invoiceId,
-    invoiceNumber: inv.number,
-    amountCents: invoiceTotal(inv).total,
-    customerEmail: client?.email ?? "",
-    description: `Virtual staging · ${project.address}`,
-    successUrl: appUrl(`${backPath}?staging=1`),
-    cancelUrl: appUrl(backPath),
-  });
-  redirect(checkout.url);
+  await startStaging(rows.map((r) => r.id));
+  redirect(back(backPath, { staging: "1" }));
 }
 
-/** Owner: set the per-photo price and turn the offer on or off. */
+/** Owner: set the one-time unlock price and turn the offer on or off. */
 export async function saveStagingSettings(fd: FormData) {
   await requireOwner();
   await saveStagingConfig({ enabled: fd.getAll("enabled").includes("on"), price: cents(fd, "price") });

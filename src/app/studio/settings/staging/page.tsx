@@ -19,15 +19,15 @@ export default async function StagingSettingsPage({ searchParams }: { searchPara
       <Link href="/studio/settings" className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted hover:text-ink">
         <ArrowLeft className="size-4" /> Settings
       </Link>
-      <PageHeader title="Virtual staging" description="Agents can order AI staging for empty rooms from their delivery page once their gallery is paid. Each order is paid at checkout before staging starts." />
+      <PageHeader title="Virtual staging" description="Agents can add AI staging from their delivery page once their gallery is paid. They pay once per property, then stage as many photos as they like." />
       {saved && <p className="mb-4 rounded-lg bg-ok-soft px-4 py-3 text-sm text-ok">Saved.</p>}
       <Card>
-        <CardHeader title="Offer" sub={staging.name === "http" ? "Orders go to your staging API automatically" : "No staging API yet: paid orders queue on the project page and you upload the result"} />
+        <CardHeader title="Offer" sub={staging.name === "http" ? "Orders go to your staging API automatically" : "No staging API yet: requests queue on the project page and you upload the result"} />
         <form action={saveStagingSettings} className="space-y-4 p-5">
           <label className="flex items-center gap-2.5 text-[14px]">
             <input type="checkbox" name="enabled" defaultChecked={c.enabled} className="size-4 accent-[var(--accent)]" /> Offer virtual staging on delivery pages
           </label>
-          <Field label="Price per photo ($)" hint="Set to 0 to include it free">
+          <Field label="Unlock price per property ($)" hint="One payment covers unlimited photos for that property. Set to 0 to include it free.">
             <Input name="price" defaultValue={(c.price / 100).toFixed(2)} inputMode="decimal" className="max-w-40" />
           </Field>
           <SubmitButton>Save</SubmitButton>

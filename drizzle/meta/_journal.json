@@ -43,6 +43,13 @@
       "when": 1793653709230,
       "tag": "0005_virtual_staging",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793691032830,
+      "tag": "0006_staging_unlock",
+      "breakpoints": true
     }
   ]
 }

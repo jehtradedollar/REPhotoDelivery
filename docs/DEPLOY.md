@@ -48,4 +48,4 @@ Without Stripe keys, production shows agents "contact the studio to pay" unless 
 
 Pick a vendor, then map its API in `src/lib/integrations/staging.ts` (the adapter there speaks a generic JSON shape and is the only file to change). Set `VIRTUAL_STAGING_API_URL`, `VIRTUAL_STAGING_API_KEY` and `VIRTUAL_STAGING_WEBHOOK_SECRET`, and give the vendor `{APP_URL}/api/webhooks/staging` as its callback URL. If the vendor has no callbacks, schedule `GET /api/cron/staging` with `Authorization: Bearer {CRON_SECRET}`; the delivery page also checks running jobs when it's opened.
 
-Until then, paid staging orders queue on the project page and you upload the staged photo yourself. Set the per-photo price in Settings → Virtual staging.
+Until then, staging requests queue on the project page and you upload the staged photo yourself. Set the one-time unlock price in Settings → Virtual staging.

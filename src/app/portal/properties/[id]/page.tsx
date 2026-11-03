@@ -45,7 +45,7 @@ export default async function PortalProperty({
         media={[...media, ...stock]}
         unlocked={unlocked}
         hero={hero}
-        flash={{ paid: !!q.paid, booked: !!q.booked, payOffline: q.pay === "offline", staging: !!q.staging }}
+        flash={{ paid: !!q.paid, booked: !!q.booked, payOffline: q.pay === "offline", staging: q.staging === "unlocked" ? "unlocked" : q.staging ? "sent" : undefined }}
         staging={stagingInfo}
       />
     </>

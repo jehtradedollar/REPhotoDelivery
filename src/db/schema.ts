@@ -116,6 +116,9 @@ export const projects = pgTable(
     packageId: text("package_id"),
     /** Local-area stock packs the agent added when booking. */
     stockPackIds: text("stock_pack_ids").array().notNull().default([]),
+    /** Virtual staging add-on: the one-time invoice that unlocks it, and when it was paid. */
+    stagingInvoiceId: text("staging_invoice_id"),
+    stagingUnlockedAt: ts("staging_unlocked_at"),
     coverMediaId: text("cover_media_id"),
     coverSeed: integer("cover_seed").notNull().default(0),
     deliveredAt: ts("delivered_at"),
@@ -265,7 +268,7 @@ export const stockMedia = pgTable(
   (t) => [index("stock_media_pack_idx").on(t.packId)],
 );
 
-/** A paid virtual staging order for one photo. Runs once its invoice is paid. */
+/** A virtual staging job for one photo. Runs right away once the property's staging is unlocked. */
 export const stagingRequests = pgTable(
   "staging_requests",
   {

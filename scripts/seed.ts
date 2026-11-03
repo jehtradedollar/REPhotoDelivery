@@ -115,6 +115,8 @@ async function main() {
   await db.insert(s.stockMedia).values(stock);
   // Maya's lakeside listing came with the pack.
   await db.update(s.projects).set({ stockPackIds: ["stk_redding"] }).where(eq(s.projects.id, "prj_1"));
+  // Maya already bought the staging add-on for this listing.
+  await db.update(s.projects).set({ stagingUnlockedAt: new Date().toISOString() }).where(eq(s.projects.id, "prj_1"));
   await db.insert(s.activity).values(seed.activity.map((a) => ({ ...a, projectId: a.projectId ?? null, clientId: a.clientId ?? null })));
 
   // A few months of past, paid work so the revenue chart has history.

@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Check, Lock, Sofa, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { orderStaging } from "@/lib/actions";
+import { orderStaging, unlockStaging } from "@/lib/actions";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
 import { SubmitButton } from "./submit-button";
@@ -12,9 +12,9 @@ type Photo = { id: string; thumbUrl: string | null; filename: string };
 type Choice = { roomType: string; style: string; prompt: string };
 
 /**
- * The paid virtual staging add-on on the delivery page: an offer banner the
- * agent can't miss, and a two-step order (pick photos, then describe the
- * furniture) that ends at checkout.
+ * The paid virtual staging add-on on the delivery page. The agent pays once
+ * per property to unlock it, then stages as many photos as they like with a
+ * two-step form: pick photos, then describe the furniture.
  */
 export function StagingOffer({
   projectId,
@@ -24,6 +24,7 @@ export function StagingOffer({
   roomTypes,
   styles,
   canOrder,
+  stagingUnlocked,
 }: {
   projectId: string;
   token?: string;
@@ -31,8 +32,10 @@ export function StagingOffer({
   price: number;
   roomTypes: readonly string[];
   styles: readonly string[];
-  /** False while the gallery itself is unpaid: the offer shows, ordering waits. */
+  /** False while the gallery itself is unpaid: the offer shows, buying waits. */
   canOrder: boolean;
+  /** The agent has paid for staging on this property. */
+  stagingUnlocked: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
@@ -48,7 +51,6 @@ export function StagingOffer({
     });
   const set = (id: string, patch: Partial<Choice>) => setPicked((p) => ({ ...p, [id]: { ...p[id], ...patch } }));
   const describeAll = (prompt: string) => setPicked((p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, { ...v, prompt }])));
-  const total = ids.length * price;
   const close = () => {
     setOpen(false);
     setStep(1);
@@ -73,39 +75,53 @@ export function StagingOffer({
         <div className="grid gap-5 p-5 sm:grid-cols-[1fr_auto] sm:items-center sm:p-6">
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-[12px] font-semibold tracking-wide text-accent uppercase">
-              <Sparkles className="size-3.5" /> Add-on
+              <Sparkles className="size-3.5" /> {stagingUnlocked ? "Add-on unlocked" : "Add-on"}
             </p>
             <h2 id="staging-offer-title" className="mt-1 font-display text-[24px] leading-tight font-medium tracking-tight">
               Virtual staging
             </h2>
             <p className="mt-1 max-w-[52ch] text-[14px] text-ink-2">
-              Furnish empty rooms with AI. Pick the photos, describe the furniture you want, and the staged versions land in your gallery, usually within a day.
+              {stagingUnlocked
+                ? "Stage as many photos as you like for this property. Pick the rooms, describe the furniture, and the staged versions land in your gallery, usually within a day."
+                : "Furnish empty rooms with AI. Pay once to unlock it for this property, then stage as many photos as you like, each with your own furniture description."}
             </p>
-            <ol className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-ink-2">
-              <li>
-                <span className="font-semibold text-ink">1</span> Choose photos
-              </li>
-              <li>
-                <span className="font-semibold text-ink">2</span> Describe the furniture
-              </li>
-              <li>
-                <span className="font-semibold text-ink">3</span> Pay to unlock
-              </li>
-            </ol>
+            {!stagingUnlocked && (
+              <ol className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-ink-2">
+                <li>
+                  <span className="font-semibold text-ink">1</span> Unlock once
+                </li>
+                <li>
+                  <span className="font-semibold text-ink">2</span> Choose any photos
+                </li>
+                <li>
+                  <span className="font-semibold text-ink">3</span> Describe the furniture
+                </li>
+              </ol>
+            )}
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
-            <p className="text-[14px] sm:text-right">
-              <span className="font-display text-[28px] leading-none font-medium tabular">{money(price)}</span>
-              <span className="text-ink-2"> per photo</span>
-            </p>
-            {canOrder ? (
+            {stagingUnlocked ? (
               <Button type="button" size="lg" onClick={() => setOpen(true)}>
                 <Sofa /> Stage photos
               </Button>
             ) : (
-              <p className="flex items-center gap-1.5 text-[13px] text-ink-2 sm:justify-end">
-                <Lock className="size-4" /> Available once this shoot is paid
-              </p>
+              <>
+                <p className="text-[14px] sm:text-right">
+                  <span className="font-display text-[28px] leading-none font-medium tabular">{money(price)}</span>
+                  <span className="block text-[13px] text-ink-2">one time · unlimited photos</span>
+                </p>
+                {canOrder ? (
+                  <form action={unlockStaging.bind(null, projectId, token ?? "")}>
+                    <SubmitButton size="lg" className="w-full">
+                      <Lock /> {price > 0 ? "Unlock virtual staging" : "Turn on virtual staging"}
+                    </SubmitButton>
+                  </form>
+                ) : (
+                  <p className="flex items-center gap-1.5 text-[13px] text-ink-2 sm:justify-end">
+                    <Lock className="size-4" /> Available once this shoot is paid
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -123,7 +139,7 @@ export function StagingOffer({
         )}
       </section>
 
-      {open && (
+      {open && stagingUnlocked && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="staging-title" onClick={close}>
           <form
             action={orderStaging.bind(null, projectId, token ?? "")}
@@ -138,7 +154,7 @@ export function StagingOffer({
                   {step === 1 ? "Choose photos to stage" : "Describe the furniture"}
                 </h2>
                 <p className="mt-1 text-[14px] text-ink-2">
-                  {step === 1 ? `Tap the empty rooms you want furnished. ${money(price)} per photo.` : "Pick a room and style for each photo and say what you'd like in it."}
+                  {step === 1 ? "Tap the empty rooms you want furnished. Pick as many as you like." : "Pick a room and style for each photo and say what you'd like in it."}
                 </p>
               </div>
               <button type="button" onClick={close} className="rounded-lg p-1.5 text-muted hover:bg-surface-2" aria-label="Close">
@@ -229,7 +245,9 @@ export function StagingOffer({
 
             <div className="flex flex-col gap-3 border-t border-line p-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[13px] text-ink-2">
-                {ids.length} photo{ids.length === 1 ? "" : "s"} selected · <span className="font-semibold text-ink tabular">{money(total)}</span>
+                <span className="font-semibold text-ink">
+                  {ids.length} photo{ids.length === 1 ? "" : "s"} selected
+                </span>
                 <span className="block text-[12px] text-muted">Staged photos appear in your gallery, usually within a day.</span>
               </p>
               {step === 1 ? (
@@ -242,7 +260,7 @@ export function StagingOffer({
                     <ArrowLeft /> Back
                   </Button>
                   <SubmitButton size="lg" disabled={!ids.length}>
-                    {price > 0 ? `Pay ${money(total)} and unlock staging` : "Order staging"}
+                    Stage {ids.length} photo{ids.length === 1 ? "" : "s"}
                   </SubmitButton>
                 </div>
               )}
