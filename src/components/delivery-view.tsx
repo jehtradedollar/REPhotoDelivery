@@ -1,5 +1,5 @@
 import { CalendarDays, CheckCircle2, Clock, Download, Globe, Lock, Sofa, Sparkles } from "lucide-react";
-import { StagingDialog } from "@/components/staging-dialog";
+import { StagingOffer } from "@/components/staging-dialog";
 import Link from "next/link";
 import { InvoiceLines } from "@/components/invoice-lines";
 import { MediaGallery } from "@/components/media-gallery";
@@ -27,7 +27,7 @@ export interface DeliveryViewProps {
   /** Set on the stand-alone page; carried into download and payment links. */
   token?: string;
   flash?: { paid?: boolean; booked?: boolean; payOffline?: boolean; staging?: boolean };
-  staging?: { price: number; canOrder: boolean; photos: { id: string; thumbUrl: string | null; filename: string }[]; requests: StagingRequest[] } | null;
+  staging?: { price: number; offered: boolean; canOrder: boolean; photos: { id: string; thumbUrl: string | null; filename: string }[]; requests: StagingRequest[] } | null;
 }
 
 const stagingStatus: Record<StagingRequest["status"], string> = {
@@ -126,6 +126,10 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
             </div>
           )}
 
+          {delivered && staging?.offered && staging.canOrder && (
+            <StagingOffer projectId={p.id} token={token} photos={staging.photos} price={staging.price} canOrder={staging.canOrder} roomTypes={ROOM_TYPES} styles={STYLES} />
+          )}
+
           <Card>
             <CardHeader
               title="Media"
@@ -147,15 +151,18 @@ export function DeliveryView({ project: p, shoot, invoice, media, unlocked, hero
               )}
             </div>
           </Card>
+
+          {delivered && staging?.offered && !staging.canOrder && (
+            <StagingOffer projectId={p.id} token={token} photos={staging.photos} price={staging.price} canOrder={false} roomTypes={ROOM_TYPES} styles={STYLES} />
+          )}
         </div>
 
         <div className="space-y-6">
-          {staging && (
+          {staging && staging.requests.length > 0 && (
             <Card>
-              <CardHeader title="Virtual staging" sub={staging.canOrder ? `Furnish empty rooms with AI · ${money(staging.price)} per photo` : undefined} />
+              <CardHeader title="Your staging orders" />
               <div className="space-y-4 p-5">
-                {staging.canOrder && <StagingDialog projectId={p.id} token={token} photos={staging.photos} price={staging.price} roomTypes={ROOM_TYPES} styles={STYLES} />}
-                {staging.requests.length > 0 && (
+                {(
                   <ul className="space-y-2 text-[13px]">
                     {staging.requests.map((r) => {
                       const src = staging.photos.find((x) => x.id === r.mediaId);

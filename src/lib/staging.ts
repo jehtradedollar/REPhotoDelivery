@@ -153,6 +153,8 @@ export async function stagingOffer(projectId: string, unlocked: boolean, photos:
   }
   const eligible = photos.filter((p) => p.kind === "photo" && !p.group).map((p) => ({ id: p.id, thumbUrl: p.thumbUrl, filename: p.filename }));
   const visible = requests.filter((r) => r.status !== "awaiting_payment" && r.status !== "cancelled");
-  if ((!config.enabled || !unlocked || !eligible.length) && !visible.length) return null;
-  return { price: config.price, canOrder: config.enabled && unlocked && eligible.length > 0, photos: eligible, requests: visible };
+  const offered = config.enabled && eligible.length > 0;
+  if (!offered && !visible.length) return null;
+  // The offer shows on locked galleries too, so agents see it before paying; ordering waits for payment.
+  return { price: config.price, offered, canOrder: offered && unlocked, photos: eligible, requests: visible };
 }
